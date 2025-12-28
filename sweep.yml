@@ -8,34 +8,34 @@ metric:
 
 parameters:
   normalization_enabled:
-    values: [true,false]
+    values: [true, false]
   
   normalization_global:
     values: [false]
 
   pooling_method:
-    values: ['sum','mean','attention']
+    values: ['sum', 'mean', 'attention']
   
   loss_balancing_strategy:
     values: ['static', 'gradnorm', 'first_epoch']
 
-  node_weight:
-    values: [1,2]
+  occupation_weight:
+    values: [1, 2]
 
-  edge_weight:
+  keibo_weight:
     value: 1
 
-  global_weight:
-    values: [.01,.5]
+  energy_weight:
+    values: [0.01, 0.5]
 
   hidden_dim:
-    values: [32,64]
+    values: [32, 64]
 
-  element_embedding_dim:
-    values: [32,64,128]
+  orbital_embedding_dim:
+    values: [32, 64, 128]
 
   num_layers:
-    values: [3,4]
+    values: [3, 4]
 
 command:
   - ${env}

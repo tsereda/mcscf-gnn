@@ -1,1 +1,9 @@
+.DS_Store
+__pycache__/
+runs/
 data
+wandb
+analysis
+impplan.md
+.gitignore
+analysisfilesoct25/files.zip

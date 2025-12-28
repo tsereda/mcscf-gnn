@@ -1,1 +1,0 @@
-well start by comparing 

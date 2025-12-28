@@ -1,0 +1,44 @@
+program: main.py
+method: bayes
+project: gamess-gnn-sweep
+
+metric:
+  name: avg_val_mse
+  goal: minimize
+
+parameters:
+  normalization_enabled:
+    values: [true,false]
+  
+  normalization_global:
+    values: [false]
+
+  pooling_method:
+    values: ['sum','mean','attention']
+  
+  loss_balancing_strategy:
+    values: ['static', 'gradnorm', 'first_epoch']
+
+  node_weight:
+    values: [1,2]
+
+  edge_weight:
+    value: 1
+
+  global_weight:
+    values: [.01,.5]
+
+  hidden_dim:
+    values: [32,64]
+
+  element_embedding_dim:
+    values: [32,64,128]
+
+  num_layers:
+    values: [3,4]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --sweep

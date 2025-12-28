@@ -22,7 +22,7 @@ class GradNormLoss(nn.Module):
                  initial_weights: Optional[List[float]] = None):
         """
         Args:
-            num_tasks: Number of tasks (3 for our case: node, edge, global)
+            num_tasks: Number of tasks (3 for our case: occupation, keibo, energy)
             alpha: Restoring force hyperparameter (controls how aggressively to balance)
                    - alpha = 0: No balancing (static weights)
                    - alpha = 1.5: Recommended default value
@@ -61,14 +61,14 @@ class GradNormLoss(nn.Module):
         Used to normalize loss ratios.
         
         Args:
-            losses: List of initial losses [node_loss, edge_loss, global_loss]
+            losses: List of initial losses [occupation_loss, keibo_loss, energy_loss]
         """
         self.initial_losses = torch.tensor(losses, dtype=torch.float32)
         self.initial_loss_set = True
         print(f"\nGradNorm initial losses set:")
-        print(f"  Node: {losses[0]:.6f}")
-        print(f"  Edge: {losses[1]:.6f}")
-        print(f"  Global: {losses[2]:.6f}")
+        print(f"  Occupation: {losses[0]:.6f}")
+        print(f"  KEI-BO: {losses[1]:.6f}")
+        print(f"  Energy: {losses[2]:.6f}")
     
     def compute_grad_norm(self, loss: torch.Tensor, 
                          model_parameters, 
@@ -108,20 +108,20 @@ class GradNormLoss(nn.Module):
         return grad_norm
     
     def forward(self, 
-                node_pred: torch.Tensor, 
-                edge_pred: torch.Tensor, 
-                global_pred: torch.Tensor,
-                node_target: torch.Tensor, 
-                edge_target: torch.Tensor, 
-                global_target: torch.Tensor,
+                occupation_pred: torch.Tensor, 
+                keibo_pred: torch.Tensor, 
+                energy_pred: torch.Tensor,
+                occupation_target: torch.Tensor, 
+                keibo_target: torch.Tensor, 
+                energy_target: torch.Tensor,
                 model_parameters = None,
                 update_weights: bool = True) -> Tuple[torch.Tensor, Dict]:
         """
         Compute weighted multi-task loss with GradNorm balancing.
         
         Args:
-            node_pred, edge_pred, global_pred: Model predictions
-            node_target, edge_target, global_target: Ground truth targets
+            occupation_pred, keibo_pred, energy_pred: Model predictions
+            occupation_target, keibo_target, energy_target: Ground truth targets
             model_parameters: Model parameters (needed for gradient computation)
             update_weights: Whether to update task weights (set False during validation)
             
@@ -130,11 +130,11 @@ class GradNormLoss(nn.Module):
             loss_dict: Dictionary with loss components and statistics
         """
         # Compute individual task losses
-        node_loss = self.mse(node_pred, node_target)
-        edge_loss = self.mse(edge_pred, edge_target)
-        global_loss = self.mse(global_pred, global_target)
+        occupation_loss = self.mse(occupation_pred, occupation_target)
+        keibo_loss = self.mse(keibo_pred, keibo_target)
+        energy_loss = self.mse(energy_pred, energy_target)
         
-        losses = [node_loss, edge_loss, global_loss]
+        losses = [occupation_loss, keibo_loss, energy_loss]
         
         # Set initial losses on first call
         if not self.initial_loss_set:
@@ -157,15 +157,15 @@ class GradNormLoss(nn.Module):
         weighted_losses = [w * l for w, l in zip(weights, losses)]
         total_loss = sum(weighted_losses)
         
-        # Prepare loss dictionary
+        # Prepare loss dictionary with orbital naming convention
         loss_dict = {
             'total_loss': total_loss.item(),
-            'node_loss': node_loss.item(),
-            'edge_loss': edge_loss.item(),
-            'global_loss': global_loss.item(),
-            'node_weight': weights[0].item(),
-            'edge_weight': weights[1].item(),
-            'global_weight': weights[2].item()
+            'occupation_loss': occupation_loss.item(),
+            'keibo_loss': keibo_loss.item(),
+            'energy_loss': energy_loss.item(),
+            'occupation_weight': weights[0].item(),
+            'keibo_weight': weights[1].item(),
+            'energy_weight': weights[2].item()
         }
         
         return total_loss, loss_dict
@@ -272,7 +272,7 @@ class GradNormLoss(nn.Module):
         
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
         
-        task_names = ['Node', 'Edge', 'Global']
+        task_names = ['Occupation', 'KEI-BO', 'Energy']
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
         
         # Plot 1: Task weights over time

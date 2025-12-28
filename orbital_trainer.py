@@ -213,27 +213,26 @@ class OrbitalGAMESSTrainer:
                 'train_metrics': self.train_metrics, 'val_metrics': self.val_metrics}
     
     def _print_progress(self, epoch, total, train_results, val_results):
-        """Print training progress with orbital-specific terminology."""
-        print(f"\nEpoch {epoch}/{total}")
-        for name, results in [("Train", train_results), ("Val", val_results)]:
-            losses = results['losses']
-            components = [
-                f"occupation: {losses.get('occupation_loss', 0.0):.4f}",
-                f"keibo: {losses.get('keibo_loss', 0.0):.4f}",
-                f"energy: {losses.get('energy_loss', 0.0):.4f}"
-            ]
-            
-            # Add task weights if available
-            if 'occupation_weight' in losses:
-                weights = f"(w: {losses['occupation_weight']:.2f}, {losses['keibo_weight']:.2f}, {losses['energy_weight']:.2f})"
-                print(f"{name}: {losses['total_loss']:.4f} ({', '.join(components)}) {weights}")
-            else:
-                print(f"{name}: {losses['total_loss']:.4f} ({', '.join(components)})")
+        """Print training progress with compact, informative formatting."""
+        losses = train_results['losses']
+        val_losses = val_results['losses']
         
-        for task in self.task_types:
-            train_mse = train_results[f'{task}_metrics']['mse']
-            val_mse = val_results[f'{task}_metrics']['mse']
-            print(f"{task.title()}: {train_mse:.6f} / {val_mse:.6f}")
+        # Extract task weights if available
+        weights_str = ""
+        if 'occupation_weight' in losses:
+            weights_str = f" w=[{losses['occupation_weight']:.2f},{losses['keibo_weight']:.2f},{losses['energy_weight']:.2f}]"
+        
+        # Main progress line
+        print(f"\nEpoch {epoch:3d}/{total} | "
+              f"Loss: Tr={losses['total_loss']:.4f} Val={val_losses['total_loss']:.4f}{weights_str}")
+        
+        # Detailed metrics line - now showing individual loss components and MSE
+        print(f"  Occ: L={losses['occupation_loss']:.4f}/{val_losses['occupation_loss']:.4f} "
+              f"MSE={train_results['occupation_metrics']['mse']:.6f}/{val_results['occupation_metrics']['mse']:.6f} | "
+              f"KEI: L={losses['keibo_loss']:.4f}/{val_losses['keibo_loss']:.4f} "
+              f"MSE={train_results['keibo_metrics']['mse']:.6f}/{val_results['keibo_metrics']['mse']:.6f} | "
+              f"Eng: L={losses['energy_loss']:.4f}/{val_losses['energy_loss']:.4f} "
+              f"MSE={train_results['energy_metrics']['mse']:.1f}/{val_results['energy_metrics']['mse']:.1f}")
     
     def plot_training_curves(self, save_path: str = None, title_suffix: str = ""):
         """Plot training curves for orbital tasks."""

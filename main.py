@@ -1,3 +1,12 @@
+"""
+FIXED VERSION: Global normalization now properly excludes validation fold to prevent data leakage
+
+Key changes:
+1. compute_global_normalizer now accepts exclude_files parameter
+2. Global normalizer is recomputed for each fold, excluding that fold's validation files
+3. This prevents data leakage while maintaining global statistics across training data
+"""
+
 import os
 import json
 from datetime import datetime
@@ -26,47 +35,56 @@ from visualization import (
 )
 
 
-def compute_global_normalizer(all_files, config, run_dir):
+def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fold_num):
     """
-    Compute normalization statistics from ALL data files.
+    Compute normalization statistics from training data only (excluding validation fold).
+    
+    This is the CORRECT way to do global normalization - compute stats from all TRAINING
+    data across folds, but exclude the current validation fold.
     
     Args:
         all_files: List of all file paths
+        exclude_files: Files in current validation fold to exclude
         config: Configuration dictionary
         run_dir: Directory to save normalizer
+        fold_num: Current fold number for naming
         
     Returns:
         Fitted DataNormalizer instance
     """
     print("\n" + "="*70)
-    print("COMPUTING GLOBAL NORMALIZATION STATISTICS")
+    print(f"COMPUTING GLOBAL NORMALIZATION STATISTICS (Fold {fold_num})")
     print("="*70)
-    print(f"Processing all {len(all_files)} files to compute global statistics...")
     
-    # Parse all files
+    # Exclude validation files
+    files_to_use = [f for f in all_files if f not in exclude_files]
+    print(f"Using {len(files_to_use)}/{len(all_files)} files (excluding {len(exclude_files)} validation files)")
+    
+    # Parse training files only
     parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
-    all_graphs = process_orbital_files(parser, all_files)
+    train_graphs = process_orbital_files(parser, files_to_use)
     
-    if len(all_graphs) == 0:
-        raise ValueError("No valid graphs found in dataset")
+    if len(train_graphs) == 0:
+        raise ValueError("No valid training graphs found")
     
-    print(f"Successfully processed {len(all_graphs)} graphs")
+    print(f"Successfully processed {len(train_graphs)} training graphs")
     
-    # Create temporary loader with all data
-    global_loader = DataLoader(all_graphs, batch_size=32, shuffle=False)
+    # Create temporary loader with training data only
+    train_loader = DataLoader(train_graphs, batch_size=32, shuffle=False)
     
-    # Fit normalizer on all data
+    # Fit normalizer on training data
     global_normalizer = DataNormalizer(method=config['normalization']['method'])
-    global_normalizer.fit(global_loader)
+    global_normalizer.fit(train_loader)
     
-    # Save global normalizer
-    global_norm_path = os.path.join(run_dir, "global_normalizer.pkl")
-    global_normalizer.save(global_norm_path)
+    # Save normalizer
+    norm_path = os.path.join(run_dir, f"fold_{fold_num:02d}_global_normalizer.pkl")
+    global_normalizer.save(norm_path)
     
-    print(f"Global normalizer saved to: {global_norm_path}")
+    print(f"Fold {fold_num} global normalizer saved to: {norm_path}")
     print("="*70)
     
     return global_normalizer
+
 
 def main():
     """Main training script with n-fold cross-validation, normalization, GradNorm, and WandB support."""
@@ -81,7 +99,7 @@ def main():
             'num_layers': 2,
             'dropout': 0.25,
             'global_pooling_method': 'sum',
-            'orbital_embedding_dim': 32  # Updated for orbital model
+            'orbital_embedding_dim': 32
         },
         'training': {
             'learning_rate': 0.0001,
@@ -89,7 +107,7 @@ def main():
             'num_epochs': 250,
             'batch_size': 16,
             'print_frequency': 50,
-            'occupation_weight': 1.5,  # Updated naming for orbital tasks
+            'occupation_weight': 1.5,
             'keibo_weight': 2.0,
             'energy_weight': 0.1
         },
@@ -122,7 +140,6 @@ def main():
         # Override config with sweep parameters
         config = default_config.copy()
         
-        # Update from wandb.config
         config['normalization']['enabled'] = wandb.config.normalization_enabled
         if wandb.config.normalization_enabled:
             config['normalization']['global_norm'] = wandb.config.normalization_global
@@ -143,7 +160,6 @@ def main():
             config['model']['num_layers']
         )
         
-        # CLEAN: Single parameter controls loss balancing strategy
         strategy = getattr(wandb.config, 'loss_balancing_strategy', 'gradnorm')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
         config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
@@ -167,7 +183,6 @@ def main():
     print(f"  Orbital Embedding: {config['model']['orbital_embedding_dim']}D")
     print(f"  Training: LR={config['training']['learning_rate']}, WD={config['training']['weight_decay']}, {config['training']['num_epochs']} epochs")
     
-    # Loss weighting strategy
     if config['gradnorm']['enabled']:
         print(f"  Loss Balancing: GradNorm (alpha={config['gradnorm']['alpha']}, lr={config['gradnorm']['learning_rate']})")
     elif config['use_first_epoch_weighting']:
@@ -182,17 +197,14 @@ def main():
         print(f"  Normalization: DISABLED")
     
     try:
-        # Get all files from each folder
         folder_files = get_all_files_per_folder(config['data']['base_path'])
         
         if not folder_files:
             raise ValueError("No folders with .log files found")
         
-        # Determine validation strategy
         validation_mode = config['data']['validation_mode']
         
         if validation_mode == 'per_element':
-            # Collect all files
             all_files = []
             for folder_name, files in folder_files.items():
                 all_files.extend(files)
@@ -200,10 +212,8 @@ def main():
             file_to_folder = create_file_to_folder_mapping(folder_files)
             available_elements = get_all_elements_in_dataset(all_files)
             
-            # If in sweep mode, only use specified elements
             if is_sweep and config['wandb']['enabled']:
                 sweep_elements = config['wandb']['sweep_elements']
-                # Filter to only sweep elements that exist in dataset
                 elements_to_validate = [e for e in sweep_elements if e in available_elements]
                 if not elements_to_validate:
                     raise ValueError(f"None of sweep elements {sweep_elements} found in dataset {available_elements}")
@@ -250,14 +260,8 @@ def main():
         os.makedirs(run_dir, exist_ok=True)
         print(f"\nResults will be saved to: {run_dir}")
         
-        # Save configuration
         with open(os.path.join(run_dir, 'config.json'), 'w') as f:
             json.dump(config, f, indent=2)
-        
-        # Compute global normalizer if enabled
-        global_normalizer = None
-        if config['normalization']['enabled'] and config['normalization'].get('global_norm', False):
-            global_normalizer = compute_global_normalizer(all_files, config, run_dir)
         
         # Initialize visualizer
         visualizer = ModelVisualizer()
@@ -269,7 +273,6 @@ def main():
         
         for fold_num in range(n_folds):
             if validation_mode == 'per_element':
-                # Get the element index in the original available_elements list
                 target_element = elements_to_validate[fold_num]
                 element_index = available_elements.index(target_element)
                 
@@ -282,6 +285,9 @@ def main():
                     all_files, file_to_folder, element_index, available_elements, config['training']['batch_size']
                 )
                 
+                # Get validation files for this fold
+                val_files = [f for f in all_files if file_to_folder.get(f) in fold_info.get('validation_actual_folders', [])]
+                
             elif validation_mode == 'per_molecule':
                 validation_folder = folders_with_files[fold_num]
                 print(f"\n{'='*70}")
@@ -291,14 +297,24 @@ def main():
                 train_loader, val_loader, fold_info = prepare_single_fold_data(
                     folder_files, validation_folder, config['training']['batch_size']
                 )
+                
+                val_files = folder_files[validation_folder]
             
             # Determine normalizer
             normalizer = None
             if config['normalization']['enabled']:
                 if config['normalization'].get('global_norm', False):
-                    normalizer = global_normalizer
-                    print(f"Using GLOBAL normalizer")
+                    # FIXED: Compute global normalizer excluding validation fold
+                    normalizer = compute_fold_global_normalizer(
+                        all_files, 
+                        val_files,
+                        config, 
+                        run_dir, 
+                        fold_num + 1
+                    )
+                    print(f"Using GLOBAL normalizer (excluding validation fold)")
                 else:
+                    # Per-fold normalization (unchanged)
                     normalizer = DataNormalizer(method=config['normalization']['method'])
                     normalizer.fit(train_loader)
                     norm_stats_path = os.path.join(run_dir, f"fold_{fold_num + 1:02d}_normalizer.pkl")
@@ -371,7 +387,6 @@ def main():
             avg_val_energy_mse = np.mean([r['val_metrics']['energy'][-1]['mse'] for r in all_results])
             avg_val_mse = (avg_val_occupation_mse + avg_val_keibo_mse + avg_val_energy_mse) / 3.0
             
-            # Log to WandB
             wandb.log({
                 'avg_val_mse': avg_val_mse,
                 'avg_val_occupation_mse': avg_val_occupation_mse,
@@ -391,13 +406,11 @@ def main():
         print("CREATING SUMMARY VISUALIZATIONS")
         print(f"{'='*70}")
         
-        # Determine folder names for summary
         if validation_mode == 'per_element':
             summary_folder_names = elements_to_validate
         else:
             summary_folder_names = folders_with_files
         
-        # Create summary plots
         create_summary_plots(all_results, run_dir, summary_folder_names)
         save_combined_orbital_results(all_results, all_fold_info, config, run_dir)
         

@@ -11,7 +11,7 @@ parameters:
     values: [true, false]
   
   normalization_global:
-    values: [false]
+    values: [true, false]
 
   pooling_method:
     values: ['sum', 'mean', 'attention']

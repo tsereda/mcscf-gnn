@@ -277,24 +277,24 @@ class OrbitalTripleTaskGNN(nn.Module):
         
         orbital_embeddings = x
         
-        # Predict orbital occupations
-        occupation_pred = self.occupation_head(orbital_embeddings)
+        # Predict orbital occupations (keep [N, 1] shape to match targets)
+        occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
-        # Predict KEI-BO values (edge predictions)
-        keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr)
+        # Predict KEI-BO values (edge predictions, keep [N, 1] shape)
+        keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
         
         # Predict global energy
         if batch is None:
             batch = torch.zeros(orbital_embeddings.size(0), dtype=torch.long, device=orbital_embeddings.device)
         
         if self.global_pooling_method == 'attention':
-            energy_pred = self.global_pooling(orbital_embeddings, batch)
+            energy_pred = self.global_pooling(orbital_embeddings, batch).squeeze(-1)
         elif self.global_pooling_method == 'mean':
             molecule_embedding = global_mean_pool(orbital_embeddings, batch)
-            energy_pred = self.global_pooling(molecule_embedding)
+            energy_pred = self.global_pooling(molecule_embedding).squeeze(-1)
         elif self.global_pooling_method == 'sum':
             molecule_embedding = global_add_pool(orbital_embeddings, batch)
-            energy_pred = self.global_pooling(molecule_embedding)
+            energy_pred = self.global_pooling(molecule_embedding).squeeze(-1)
         
         return occupation_pred, keibo_pred, energy_pred
     
@@ -383,6 +383,11 @@ class OrbitalTripleTaskLoss(nn.Module):
                 occupation_target: torch.Tensor, 
                 keibo_target: torch.Tensor, 
                 energy_target: torch.Tensor) -> Tuple[torch.Tensor, dict]:
+        
+        # Ensure targets have same shape as predictions (flatten if needed)
+        occupation_target = occupation_target.squeeze() if occupation_target.dim() > 1 else occupation_target
+        keibo_target = keibo_target.squeeze() if keibo_target.dim() > 1 else keibo_target
+        energy_target = energy_target.squeeze() if energy_target.dim() > 1 else energy_target
         
         occupation_loss = self.mse(occupation_pred, occupation_target)
         keibo_loss = self.mse(keibo_pred, keibo_target)

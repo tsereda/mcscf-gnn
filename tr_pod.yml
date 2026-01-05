@@ -52,22 +52,16 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
+          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+
+          pip install wandb
+
           git clone https://github.com/tsereda/mcscf-gnn.git
           cd mcscf-gnn
-          
-          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
-          
-          # Added check to ensure directory exists before unzipping
-          if [ -f /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz ]; then
-            7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
-            7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
-          fi
-          
-          if [ -f /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz ]; then
-            7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
-            7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
-          fi
 
+          unzip /data/dec20.zip
+          sudo cp -r for-tim/ data/
+          
           tail -f /dev/null
      
       volumeMounts:

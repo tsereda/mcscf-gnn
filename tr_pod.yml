@@ -54,13 +54,15 @@ spec:
         - |
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
 
-          pip install wandb
+          pip install wandb torch_geometric
 
           git clone https://github.com/tsereda/mcscf-gnn.git
           cd mcscf-gnn
 
           unzip /data/dec20.zip
           sudo cp -r for-tim/ data/
+
+          wandb agent timgsereda/gamess-gnn-sweep/ilhjr71r
           
           tail -f /dev/null
      

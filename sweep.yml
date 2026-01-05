@@ -1,5 +1,5 @@
 program: main.py
-method: bayes
+method: grid
 project: gamess-gnn-sweep
 
 metric:
@@ -7,6 +7,20 @@ metric:
   goal: minimize
 
 parameters:
+  # Validation configuration
+  validation_method:
+    values: ['random_split', 'per_element', 'per_molecule']
+  
+  validation_subset:
+    value: null  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
+  
+  val_split_ratio:
+    value: 0.2  # Only used for random_split method
+  
+  random_seed:
+    value: 42  # For reproducibility
+  
+  # Model and training parameters
   normalization_enabled:
     values: [true, false]
   

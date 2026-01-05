@@ -24,6 +24,7 @@ from crossvalidation import (
     create_file_to_folder_mapping,
     prepare_single_fold_data,
     prepare_element_based_fold_data,
+    prepare_random_split_data,
     get_all_elements_in_dataset,
     save_detailed_orbital_validation_report,
     save_combined_orbital_results
@@ -123,7 +124,10 @@ def main():
         },
         'data': {
             'base_path': 'data',
-            'validation_mode': 'per_element'
+            'validation_mode': 'per_element',  # 'random_split', 'per_element', or 'per_molecule'
+            'validation_subset': None,  # None = all, or list like ['H', 'C'] or ['b2', 'h2o']
+            'val_split_ratio': 0.2,  # Only for random_split
+            'random_seed': 42  # For random_split reproducibility
         },
         'wandb': {
             'enabled': is_sweep,
@@ -164,9 +168,20 @@ def main():
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
         config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
         
+        # Validation configuration
+        config['data']['validation_mode'] = getattr(wandb.config, 'validation_method', 'per_element')
+        config['data']['validation_subset'] = getattr(wandb.config, 'validation_subset', None)
+        config['data']['val_split_ratio'] = getattr(wandb.config, 'val_split_ratio', 0.2)
+        config['data']['random_seed'] = getattr(wandb.config, 'random_seed', 42)
+        
         print(f"\n{'='*70}")
         print("WANDB SWEEP RUN")
         print(f"{'='*70}")
+        print(f"Validation Method: {config['data']['validation_mode']}")
+        print(f"Validation Subset: {config['data']['validation_subset'] if config['data']['validation_subset'] else 'All'}")
+        if config['data']['validation_mode'] == 'random_split':
+            print(f"Val Split Ratio: {config['data']['val_split_ratio']}")
+            print(f"Random Seed: {config['data']['random_seed']}")
         print(f"Normalization: {'Global' if wandb.config.normalization_global else 'Per-fold'} (enabled={wandb.config.normalization_enabled})")
         print(f"Loss Balancing Strategy: {strategy}")
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.keibo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
@@ -203,23 +218,37 @@ def main():
             raise ValueError("No folders with .log files found")
         
         validation_mode = config['data']['validation_mode']
+        validation_subset = config['data']['validation_subset']
         
-        if validation_mode == 'per_element':
-            all_files = []
-            for folder_name, files in folder_files.items():
-                all_files.extend(files)
+        # Collect all files
+        all_files = []
+        for folder_name, files in folder_files.items():
+            all_files.extend(files)
+        
+        if validation_mode == 'random_split':
+            # Random 80/20 split
+            n_folds = 1
+            elements_to_validate = None
             
+            print(f"\nPlanning random split validation:")
+            print(f"  Split ratio: {config['data']['val_split_ratio']:.1%} validation")
+            print(f"  Random seed: {config['data']['random_seed']}")
+            print(f"  Total files: {len(all_files)}")
+            
+        elif validation_mode == 'per_element':
+            # Element-based cross-validation
             file_to_folder = create_file_to_folder_mapping(folder_files)
             available_elements = get_all_elements_in_dataset(all_files)
             
-            if is_sweep and config['wandb']['enabled']:
-                sweep_elements = config['wandb']['sweep_elements']
-                elements_to_validate = [e for e in sweep_elements if e in available_elements]
+            # Filter elements if validation_subset is specified
+            if validation_subset:
+                elements_to_validate = [e for e in validation_subset if e in available_elements]
                 if not elements_to_validate:
-                    raise ValueError(f"None of sweep elements {sweep_elements} found in dataset {available_elements}")
-                print(f"\nSWEEP MODE: Validating only on elements: {elements_to_validate}")
+                    raise ValueError(f"None of specified elements {validation_subset} found in dataset {available_elements}")
+                print(f"\nValidation subset specified: Using elements {elements_to_validate}")
             else:
                 elements_to_validate = available_elements
+                print(f"\nUsing all available elements: {elements_to_validate}")
             
             n_folds = len(elements_to_validate)
             fold_descriptions = [f"Val: {element}" for element in elements_to_validate]
@@ -230,18 +259,27 @@ def main():
                 print(f"  Fold {i:2d}: {desc}")
         
         elif validation_mode == 'per_molecule':
+            # Per-molecule/folder cross-validation
             folders_with_files = [f for f, files in folder_files.items() if len(files) > 0]
-            n_folds = len(folders_with_files)
-            all_files = []
-            for folder_name, files in folder_files.items():
-                all_files.extend(files)
+            
+            # Filter folders if validation_subset is specified
+            if validation_subset:
+                folders_to_validate = [f for f in validation_subset if f in folders_with_files]
+                if not folders_to_validate:
+                    raise ValueError(f"None of specified folders {validation_subset} found in dataset {folders_with_files}")
+                print(f"\nValidation subset specified: Using folders {folders_to_validate}")
+            else:
+                folders_to_validate = folders_with_files
+                print(f"\nUsing all available folders")
+            
+            n_folds = len(folders_to_validate)
             elements_to_validate = None
             
             print(f"\nPlanning {n_folds}-fold cross-validation:")
-            for i, folder_name in enumerate(folders_with_files, 1):
+            for i, folder_name in enumerate(folders_to_validate, 1):
                 print(f"  Fold {i:2d}: Validation = {folder_name} ({len(folder_files[folder_name])} files)")
         else:
-            raise ValueError(f"Invalid validation_mode: {validation_mode}")
+            raise ValueError(f"Invalid validation_mode: {validation_mode}. Must be 'random_split', 'per_element', or 'per_molecule'")
         
         # Create run directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -272,7 +310,27 @@ def main():
         all_trainers = []
         
         for fold_num in range(n_folds):
-            if validation_mode == 'per_element':
+            if validation_mode == 'random_split':
+                print(f"\n{'='*70}")
+                print(f"RANDOM SPLIT VALIDATION")
+                print(f"{'='*70}")
+                
+                train_loader, val_loader, fold_info = prepare_random_split_data(
+                    all_files,
+                    split_ratio=config['data']['val_split_ratio'],
+                    random_seed=config['data']['random_seed'],
+                    batch_size=config['training']['batch_size']
+                )
+                
+                # For random split, we need to extract val_files from fold_info
+                # Since we don't have direct access, we'll use a proportion of all_files
+                split_idx = int(len(all_files) * (1 - config['data']['val_split_ratio']))
+                np.random.seed(config['data']['random_seed'])
+                shuffled = all_files.copy()
+                np.random.shuffle(shuffled)
+                val_files = shuffled[split_idx:]
+                
+            elif validation_mode == 'per_element':
                 target_element = elements_to_validate[fold_num]
                 element_index = available_elements.index(target_element)
                 
@@ -289,7 +347,7 @@ def main():
                 val_files = [f for f in all_files if file_to_folder.get(f) in fold_info.get('validation_actual_folders', [])]
                 
             elif validation_mode == 'per_molecule':
-                validation_folder = folders_with_files[fold_num]
+                validation_folder = folders_to_validate[fold_num]
                 print(f"\n{'='*70}")
                 print(f"FOLD {fold_num + 1}/{n_folds} - Validation Folder: {validation_folder}")
                 print(f"{'='*70}")
@@ -406,10 +464,12 @@ def main():
         print("CREATING SUMMARY VISUALIZATIONS")
         print(f"{'='*70}")
         
-        if validation_mode == 'per_element':
+        if validation_mode == 'random_split':
+            summary_folder_names = ['random_split']
+        elif validation_mode == 'per_element':
             summary_folder_names = elements_to_validate
-        else:
-            summary_folder_names = folders_with_files
+        else:  # per_molecule
+            summary_folder_names = folders_to_validate
         
         create_summary_plots(all_results, run_dir, summary_folder_names)
         save_combined_orbital_results(all_results, all_fold_info, config, run_dir)

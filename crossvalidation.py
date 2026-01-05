@@ -170,6 +170,79 @@ def split_files_by_element_with_folders(all_files: List[str], file_to_folder: Di
     return files_without_element, files_with_element, folders_without_element_list, folders_with_element_list
 
 
+def prepare_random_split_data(all_files: List[str],
+                              split_ratio: float = 0.2,
+                              random_seed: int = 42,
+                              batch_size: int = 16) -> Tuple[DataLoader, DataLoader, Dict]:
+    """
+    Prepare data with random train/validation split.
+    
+    Args:
+        all_files: List of all file paths
+        split_ratio: Fraction of data to use for validation (default: 0.2 for 80/20 split)
+        random_seed: Random seed for reproducibility
+        batch_size: Batch size for DataLoaders
+    
+    Returns:
+        (train_loader, val_loader, fold_info)
+    """
+    print(f"\n{'='*70}")
+    print(f"RANDOM SPLIT VALIDATION")
+    print(f"{'='*70}")
+    print(f"Split ratio: {split_ratio:.1%} validation, {(1-split_ratio):.1%} training")
+    print(f"Random seed: {random_seed}")
+    print(f"Total files: {len(all_files)}")
+    
+    # Set random seed for reproducibility
+    np.random.seed(random_seed)
+    
+    # Shuffle and split files
+    shuffled_files = all_files.copy()
+    np.random.shuffle(shuffled_files)
+    
+    split_idx = int(len(shuffled_files) * (1 - split_ratio))
+    train_files = shuffled_files[:split_idx]
+    val_files = shuffled_files[split_idx:]
+    
+    print(f"Training files: {len(train_files)}")
+    print(f"Validation files: {len(val_files)}")
+    
+    # Process files with orbital parser
+    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    
+    print(f"Processing training files...")
+    train_graphs = process_orbital_files(parser, train_files)
+    
+    print(f"Processing validation files...")
+    val_graphs = process_orbital_files(parser, val_files)
+    
+    if len(train_graphs) == 0:
+        raise ValueError("No valid training graphs for random split")
+    if len(val_graphs) == 0:
+        print(f"    ⚠️ No valid validation graphs, using copy of first training graph")
+        val_graphs = [train_graphs[0]]
+    
+    # Create data loaders
+    train_loader = DataLoader(train_graphs, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_graphs, batch_size=batch_size, shuffle=False)
+    
+    # Fold information
+    fold_info = {
+        'validation_folder': f'random_split_{split_ratio}',
+        'training_folders': ['random_split_train'],
+        'train_graphs': len(train_graphs),
+        'val_graphs': len(val_graphs),
+        'train_files': len(train_files),
+        'val_files': len(val_files),
+        'split_type': 'random_split',
+        'split_ratio': split_ratio,
+        'random_seed': random_seed,
+        'fold_num': 1
+    }
+    
+    return train_loader, val_loader, fold_info
+
+
 def prepare_element_based_fold_data(all_files: List[str], 
                                   file_to_folder: Dict[str, str],
                                   fold_num: int,

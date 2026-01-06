@@ -163,6 +163,11 @@ def main():
             'num_layers',
             config['model']['num_layers']
         )
+        config['training']['num_epochs'] = getattr(
+            wandb.config,
+            'epochs',
+            config['training']['num_epochs']
+        )
         
         strategy = getattr(wandb.config, 'loss_balancing_strategy', 'gradnorm')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
@@ -188,6 +193,7 @@ def main():
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
         print(f"Num Layers: {config['model']['num_layers']}")
         print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
+        print(f"Epochs: {config['training']['num_epochs']}")
     else:
         config = default_config
         print("Starting Orbital N-Fold Cross-Validation Training")

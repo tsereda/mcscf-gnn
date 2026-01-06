@@ -1,0 +1,83 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mcscf-gnn
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: wandb-sweep
+    spec:
+      nodeSelector:
+        #topology.kubernetes.io/region: us-west
+        nautilus.io/linstor: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+
+      containers:
+        - name: brats-processing
+          image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+          env:
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wandb-credentials
+                  key: api-key
+            - name: WANDB_PROJECT
+              value: "fast-cwmd"
+            - name: WANDB_ENTITY
+              value: "timgsereda"
+            - name: WANDB_MODE
+              value: "online"
+
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+
+              pip install wandb torch_geometric
+
+              git clone https://github.com/tsereda/mcscf-gnn.git
+              cd mcscf-gnn
+
+              unzip /data/dec20.zip
+              sudo cp -r for-tim/ data/
+
+              wandb agent timgsereda/gamess-gnn-sweep/yhxr8uzv
+        
+          volumeMounts:
+            - name: workspace
+              mountPath: /app
+            - name: data
+              mountPath: /data
+            - name: shm
+              mountPath: /dev/shm
+        
+          resources:
+            requests:
+              memory: 25Gi
+              cpu: "15"
+              nvidia.com/a100: "1"
+            limits:
+              memory: 30Gi
+              cpu: "18"
+              nvidia.com/a100: "1"
+    
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 50Gi
+        - name: data
+          persistentVolumeClaim:
+            claimName: kbo-oo-prediction-1
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+    
+      restartPolicy: Never

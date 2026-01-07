@@ -100,7 +100,10 @@ def main():
             'num_layers': 2,
             'dropout': 0.25,
             'global_pooling_method': 'sum',
-            'orbital_embedding_dim': 32
+            'orbital_embedding_dim': 32,
+            'use_rbf_distance': False,
+            'num_rbf': 50,
+            'rbf_cutoff': 5.0
         },
         'training': {
             'learning_rate': 0.0001,
@@ -169,6 +172,23 @@ def main():
             config['training']['num_epochs']
         )
         
+        # RBF distance encoding parameters
+        config['model']['use_rbf_distance'] = getattr(
+            wandb.config,
+            'use_rbf_distance',
+            config['model']['use_rbf_distance']
+        )
+        config['model']['num_rbf'] = getattr(
+            wandb.config,
+            'num_rbf',
+            config['model']['num_rbf']
+        )
+        config['model']['rbf_cutoff'] = getattr(
+            wandb.config,
+            'rbf_cutoff',
+            config['model']['rbf_cutoff']
+        )
+        
         strategy = getattr(wandb.config, 'loss_balancing_strategy', 'gradnorm')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
         config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
@@ -193,6 +213,7 @@ def main():
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
         print(f"Num Layers: {config['model']['num_layers']}")
         print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
+        print(f"RBF Distance Encoding: {config['model']['use_rbf_distance']} (num_rbf={config['model']['num_rbf']}, cutoff={config['model']['rbf_cutoff']})")
         print(f"Epochs: {config['training']['num_epochs']}")
     else:
         config = default_config
@@ -391,7 +412,10 @@ def main():
                 num_layers=config['model']['num_layers'],
                 dropout=config['model']['dropout'],
                 global_pooling_method=config['model']['global_pooling_method'],
-                orbital_embedding_dim=config['model']['orbital_embedding_dim']
+                orbital_embedding_dim=config['model']['orbital_embedding_dim'],
+                use_rbf_distance=config['model']['use_rbf_distance'],
+                num_rbf=config['model']['num_rbf'],
+                rbf_cutoff=config['model']['rbf_cutoff']
             )
             
             # Create trainer

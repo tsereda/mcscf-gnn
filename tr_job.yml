@@ -48,7 +48,7 @@ spec:
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              wandb agent timgsereda/gamess-gnn-sweep/snjcspe4
+              wandb agent timgsereda/gamess-gnn-sweep/v06d93yr
         
           volumeMounts:
             - name: workspace

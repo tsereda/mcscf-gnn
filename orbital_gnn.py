@@ -7,6 +7,56 @@ from typing import Tuple, Optional
 import numpy as np
 
 
+class GaussianRBF(nn.Module):
+    """
+    Gaussian Radial Basis Function (RBF) distance expansion.
+    
+    Expands scalar distances into a vector of Gaussian basis functions,
+    providing a smooth, learnable representation of distance-dependent 
+    interactions (e.g., orbital kinetic energy exchange).
+    
+    Args:
+        num_rbf: Number of Gaussian basis functions
+        cutoff: Maximum distance for RBF centers
+        learnable_centers: If True, RBF centers are learnable parameters
+    """
+    
+    def __init__(self, num_rbf: int = 50, cutoff: float = 5.0, learnable_centers: bool = False):
+        super(GaussianRBF, self).__init__()
+        
+        self.num_rbf = num_rbf
+        self.cutoff = cutoff
+        
+        # Initialize RBF centers evenly spaced from 0 to cutoff
+        centers = torch.linspace(0, cutoff, num_rbf)
+        
+        if learnable_centers:
+            self.centers = nn.Parameter(centers)
+        else:
+            self.register_buffer('centers', centers)
+        
+        # Gamma controls the width of Gaussians
+        # Wider spacing → larger gamma for overlap
+        self.gamma = 10.0 / cutoff
+    
+    def forward(self, distances: torch.Tensor) -> torch.Tensor:
+        """
+        Expand distances using Gaussian RBF.
+        
+        Args:
+            distances: [num_edges, 1] scalar distances
+        
+        Returns:
+            rbf_expanded: [num_edges, num_rbf] expanded distances
+        """
+        # distances: [num_edges, 1] → [num_edges, num_rbf]
+        # Compute Gaussian: exp(-gamma * (d - center)^2)
+        diff = distances - self.centers.view(1, -1)  # Broadcasting
+        rbf_expanded = torch.exp(-self.gamma * diff ** 2)
+        
+        return rbf_expanded
+
+
 class OrbitalEmbedding(nn.Module):
     """Embedding layer for orbital features"""
     
@@ -81,8 +131,10 @@ class OrbitalMessagePassing(nn.Module):
         super(OrbitalMessagePassing, self).__init__()
         
         self.hidden_dim = hidden_dim
+        self.edge_input_dim = edge_input_dim
         
         # Edge network for NNConv
+        # Note: edge_input_dim can be 1 (raw distance) or num_rbf (RBF-expanded)
         self.edge_network = nn.Sequential(
             nn.Linear(edge_input_dim, hidden_dim),
             nn.ReLU(),
@@ -182,18 +234,32 @@ class OrbitalTripleTaskGNN(nn.Module):
     
     def __init__(self, 
                  orbital_input_dim: int = 8,      # [atomic_num, orbital_type, m_quantum, occupation, s%, p%, d%, f%]
-                 edge_input_dim: int = 1,         # distance
+                 edge_input_dim: int = 1,         # distance (raw)
                  hidden_dim: int = 128,
                  num_layers: int = 4,
                  dropout: float = 0.1,
                  max_atomic_num: int = 20,
                  orbital_embedding_dim: int = 64,
-                 global_pooling_method: str = 'attention'):
+                 global_pooling_method: str = 'attention',
+                 use_rbf_distance: bool = False,
+                 num_rbf: int = 50,
+                 rbf_cutoff: float = 5.0):
         super(OrbitalTripleTaskGNN, self).__init__()
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.global_pooling_method = global_pooling_method
+        self.use_rbf_distance = use_rbf_distance
+        
+        # RBF distance encoding (optional)
+        if use_rbf_distance:
+            self.rbf_expansion = GaussianRBF(num_rbf=num_rbf, cutoff=rbf_cutoff)
+            effective_edge_dim = num_rbf
+            print(f"Using RBF distance encoding: {num_rbf} basis functions, cutoff={rbf_cutoff}")
+        else:
+            self.rbf_expansion = None
+            effective_edge_dim = edge_input_dim
+            print(f"Using raw distance encoding")
         
         # Orbital embedding layer
         self.orbital_embedding = OrbitalEmbedding(max_atomic_num, orbital_embedding_dim)
@@ -203,7 +269,7 @@ class OrbitalTripleTaskGNN(nn.Module):
         
         # Message passing layers
         self.message_layers = nn.ModuleList([
-            OrbitalMessagePassing(hidden_dim, edge_input_dim, dropout)
+            OrbitalMessagePassing(hidden_dim, effective_edge_dim, dropout)
             for _ in range(num_layers)
         ])
         
@@ -219,8 +285,10 @@ class OrbitalTripleTaskGNN(nn.Module):
         )
         
         # KEI-BO value prediction head (edge prediction)
+        # Input: concat(source_orbital, target_orbital, edge_features)
+        keibo_input_dim = hidden_dim * 2 + effective_edge_dim
         self.keibo_head = nn.Sequential(
-            nn.Linear(hidden_dim * 2 + edge_input_dim, hidden_dim),
+            nn.Linear(keibo_input_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -266,6 +334,10 @@ class OrbitalTripleTaskGNN(nn.Module):
         """
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         batch = getattr(data, 'batch', None)
+        
+        # Apply RBF expansion to edge distances if enabled
+        if self.use_rbf_distance:
+            edge_attr = self.rbf_expansion(edge_attr)
         
         # Embed orbital features
         x = self.orbital_embedding(x)
@@ -435,7 +507,10 @@ def create_orbital_model(orbital_input_dim: int = 8,
                         dropout: float = 0.1,
                         max_atomic_num: int = 20,
                         orbital_embedding_dim: int = 64,
-                        global_pooling_method: str = 'attention') -> OrbitalTripleTaskGNN:
+                        global_pooling_method: str = 'attention',
+                        use_rbf_distance: bool = False,
+                        num_rbf: int = 50,
+                        rbf_cutoff: float = 5.0) -> OrbitalTripleTaskGNN:
     """Factory function to create the orbital-centric model"""
     return OrbitalTripleTaskGNN(
         orbital_input_dim=orbital_input_dim,
@@ -445,5 +520,8 @@ def create_orbital_model(orbital_input_dim: int = 8,
         dropout=dropout,
         max_atomic_num=max_atomic_num,
         orbital_embedding_dim=orbital_embedding_dim,
-        global_pooling_method=global_pooling_method
+        global_pooling_method=global_pooling_method,
+        use_rbf_distance=use_rbf_distance,
+        num_rbf=num_rbf,
+        rbf_cutoff=rbf_cutoff
     )

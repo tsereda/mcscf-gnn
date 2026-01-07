@@ -1,5 +1,5 @@
 program: main.py
-method: grid
+method: bayes
 project: gamess-gnn-sweep
 
 metric:
@@ -9,7 +9,7 @@ metric:
 parameters:
   # Validation configuration
   validation_method:
-    values: ['random_split', 'per_element', 'per_molecule']
+    values: ['random_split']
   
   validation_subset:
     value: null  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
@@ -53,6 +53,16 @@ parameters:
 
   epochs:
     values: [200]
+
+  # RBF Distance Encoding
+  use_rbf_distance:
+    values: [true, false]
+  
+  num_rbf:
+    value: 50  # Number of Gaussian basis functions (only used if use_rbf_distance=true)
+  
+  rbf_cutoff:
+    value: 5.0  # Maximum distance for RBF centers in Angstroms
 
 command:
   - ${env}

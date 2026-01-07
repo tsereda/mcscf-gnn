@@ -40,7 +40,7 @@ parameters:
     value: 1
 
   energy_weight:
-    values: [0.01, 0.5]
+    values: [0.0001, 0.001, 0.005, 0.01, 0.5]
 
   hidden_dim:
     values: [32, 64]

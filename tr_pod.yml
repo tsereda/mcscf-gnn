@@ -69,8 +69,14 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /app
-        - name: data
-          mountPath: /data
+        - name: data1
+          mountPath: /data1
+        - name: data2
+          mountPath: /data2
+        - name: data3
+          mountPath: /data3
+        - name: data4
+          mountPath: /data4
         - name: shm
           mountPath: /dev/shm
     
@@ -88,7 +94,16 @@ spec:
     - name: workspace
       emptyDir:
         sizeLimit: 50Gi
-    - name: data
+    - name: data1
+      persistentVolumeClaim:
+        claimName: mcscfgnn-1
+    - name: data2
+      persistentVolumeClaim:
+        claimName: mcscfgnn-2
+    - name: data3
+      persistentVolumeClaim:
+        claimName: mcscfgnn-3
+    - name: data4
       persistentVolumeClaim:
         claimName: kbo-oo-prediction-1
     - name: shm

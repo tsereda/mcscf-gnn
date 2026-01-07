@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn
+  name: mcscf-gnn-3
 spec:
   backoffLimit: 0
   template:
@@ -48,7 +48,7 @@ spec:
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              wandb agent timgsereda/gamess-gnn-sweep/yhxr8uzv
+              wandb agent timgsereda/gamess-gnn-sweep/p1ukscrk
         
           volumeMounts:
             - name: workspace
@@ -74,7 +74,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: kbo-oo-prediction-1
+            claimName: mcscfgnn-3
         - name: shm
           emptyDir:
             medium: Memory

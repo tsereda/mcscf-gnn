@@ -52,7 +52,7 @@ parameters:
     values: [3, 4]
 
   epochs:
-    values: [2]
+    values: [200]
 
 command:
   - ${env}

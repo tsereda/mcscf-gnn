@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-4
+  name: mcscf-gnn-1
 spec:
   backoffLimit: 0
   template:
@@ -74,7 +74,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: mscfgnn-1
+            claimName: mcscfgnn-1
         - name: shm
           emptyDir:
             medium: Memory

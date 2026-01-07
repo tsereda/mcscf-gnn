@@ -64,6 +64,10 @@ parameters:
   rbf_cutoff:
     value: 5.0  # Maximum distance for RBF centers in Angstroms
 
+  # Edge Hybridization Features
+  use_edge_hybridization:
+    values: [true, false]
+
 command:
   - ${env}
   - python

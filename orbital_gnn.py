@@ -243,13 +243,15 @@ class OrbitalTripleTaskGNN(nn.Module):
                  global_pooling_method: str = 'attention',
                  use_rbf_distance: bool = False,
                  num_rbf: int = 50,
-                 rbf_cutoff: float = 5.0):
+                 rbf_cutoff: float = 5.0,
+                 use_edge_hybridization: bool = False):
         super(OrbitalTripleTaskGNN, self).__init__()
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.global_pooling_method = global_pooling_method
         self.use_rbf_distance = use_rbf_distance
+        self.use_edge_hybridization = use_edge_hybridization
         
         # RBF distance encoding (optional)
         if use_rbf_distance:
@@ -260,6 +262,14 @@ class OrbitalTripleTaskGNN(nn.Module):
             self.rbf_expansion = None
             effective_edge_dim = edge_input_dim
             print(f"Using raw distance encoding")
+        
+        # Edge hybridization features (optional)
+        # Hybridization features are last 4 elements: [s%, p%, d%, f%]
+        if use_edge_hybridization:
+            self.hybrid_feature_dim = 8  # source_hybrid (4) + target_hybrid (4)
+            print(f"Using edge hybridization features: +{self.hybrid_feature_dim} dimensions")
+        else:
+            self.hybrid_feature_dim = 0
         
         # Orbital embedding layer
         self.orbital_embedding = OrbitalEmbedding(max_atomic_num, orbital_embedding_dim)
@@ -285,8 +295,8 @@ class OrbitalTripleTaskGNN(nn.Module):
         )
         
         # KEI-BO value prediction head (edge prediction)
-        # Input: concat(source_orbital, target_orbital, edge_features)
-        keibo_input_dim = hidden_dim * 2 + effective_edge_dim
+        # Input: concat(source_orbital, target_orbital, edge_features, [optional: hybridizations])
+        keibo_input_dim = hidden_dim * 2 + effective_edge_dim + self.hybrid_feature_dim
         self.keibo_head = nn.Sequential(
             nn.Linear(keibo_input_dim, hidden_dim),
             nn.ReLU(),
@@ -335,6 +345,9 @@ class OrbitalTripleTaskGNN(nn.Module):
         x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
         batch = getattr(data, 'batch', None)
         
+        # Store original node features (needed for hybridization if enabled)
+        original_node_features = x
+        
         # Apply RBF expansion to edge distances if enabled
         if self.use_rbf_distance:
             edge_attr = self.rbf_expansion(edge_attr)
@@ -353,7 +366,7 @@ class OrbitalTripleTaskGNN(nn.Module):
         occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
         # Predict KEI-BO values (edge predictions, keep [N, 1] shape)
-        keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
+        keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr, original_node_features).squeeze(-1)
         
         # Predict global energy
         if batch is None:
@@ -372,7 +385,8 @@ class OrbitalTripleTaskGNN(nn.Module):
     
     def _predict_keibo_values(self, orbital_embeddings: torch.Tensor, 
                              edge_index: torch.Tensor, 
-                             edge_attr: torch.Tensor) -> torch.Tensor:
+                             edge_attr: torch.Tensor,
+                             node_features: torch.Tensor = None) -> torch.Tensor:
         """
         Predict KEI-BO values for orbital pairs
         
@@ -380,6 +394,7 @@ class OrbitalTripleTaskGNN(nn.Module):
             orbital_embeddings: [num_orbitals, hidden_dim]
             edge_index: [2, num_edges]
             edge_attr: [num_edges, edge_input_dim]
+            node_features: [num_orbitals, orbital_input_dim] - original features (optional, for hybridization)
         
         Returns:
             keibo_pred: [num_edges, 1]
@@ -388,8 +403,18 @@ class OrbitalTripleTaskGNN(nn.Module):
         source_orbitals = orbital_embeddings[row]
         target_orbitals = orbital_embeddings[col]
         
-        # Combine orbital pair features with edge features
-        edge_features = torch.cat([source_orbitals, target_orbitals, edge_attr], dim=1)
+        # Start with orbital embeddings and edge distance
+        edge_features = [source_orbitals, target_orbitals, edge_attr]
+        
+        # Add hybridization features if enabled
+        if self.use_edge_hybridization and node_features is not None:
+            # Extract hybridization percentages (last 4 features: s%, p%, d%, f%)
+            source_hybrid = node_features[row, 4:]  # [num_edges, 4]
+            target_hybrid = node_features[col, 4:]  # [num_edges, 4]
+            edge_features.extend([source_hybrid, target_hybrid])
+        
+        # Concatenate all features
+        edge_features = torch.cat(edge_features, dim=1)
         
         # Predict KEI-BO value
         keibo_pred = self.keibo_head(edge_features)
@@ -510,7 +535,8 @@ def create_orbital_model(orbital_input_dim: int = 8,
                         global_pooling_method: str = 'attention',
                         use_rbf_distance: bool = False,
                         num_rbf: int = 50,
-                        rbf_cutoff: float = 5.0) -> OrbitalTripleTaskGNN:
+                        rbf_cutoff: float = 5.0,
+                        use_edge_hybridization: bool = False) -> OrbitalTripleTaskGNN:
     """Factory function to create the orbital-centric model"""
     return OrbitalTripleTaskGNN(
         orbital_input_dim=orbital_input_dim,
@@ -523,5 +549,6 @@ def create_orbital_model(orbital_input_dim: int = 8,
         global_pooling_method=global_pooling_method,
         use_rbf_distance=use_rbf_distance,
         num_rbf=num_rbf,
-        rbf_cutoff=rbf_cutoff
+        rbf_cutoff=rbf_cutoff,
+        use_edge_hybridization=use_edge_hybridization
     )

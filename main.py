@@ -103,7 +103,8 @@ def main():
             'orbital_embedding_dim': 32,
             'use_rbf_distance': False,
             'num_rbf': 50,
-            'rbf_cutoff': 5.0
+            'rbf_cutoff': 5.0,
+            'use_edge_hybridization': False
         },
         'training': {
             'learning_rate': 0.0001,
@@ -188,6 +189,11 @@ def main():
             'rbf_cutoff',
             config['model']['rbf_cutoff']
         )
+        config['model']['use_edge_hybridization'] = getattr(
+            wandb.config,
+            'use_edge_hybridization',
+            config['model']['use_edge_hybridization']
+        )
         
         strategy = getattr(wandb.config, 'loss_balancing_strategy', 'gradnorm')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
@@ -214,6 +220,7 @@ def main():
         print(f"Num Layers: {config['model']['num_layers']}")
         print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
         print(f"RBF Distance Encoding: {config['model']['use_rbf_distance']} (num_rbf={config['model']['num_rbf']}, cutoff={config['model']['rbf_cutoff']})")
+        print(f"Edge Hybridization Features: {config['model']['use_edge_hybridization']}")
         print(f"Epochs: {config['training']['num_epochs']}")
     else:
         config = default_config
@@ -415,7 +422,8 @@ def main():
                 orbital_embedding_dim=config['model']['orbital_embedding_dim'],
                 use_rbf_distance=config['model']['use_rbf_distance'],
                 num_rbf=config['model']['num_rbf'],
-                rbf_cutoff=config['model']['rbf_cutoff']
+                rbf_cutoff=config['model']['rbf_cutoff'],
+                use_edge_hybridization=config['model']['use_edge_hybridization']
             )
             
             # Create trainer

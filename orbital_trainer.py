@@ -221,9 +221,17 @@ class OrbitalGAMESSTrainer:
                     'train_occupation_mse': train_results['occupation_metrics']['mse'],
                     'train_keibo_mse': train_results['keibo_metrics']['mse'],
                     'train_energy_mse': train_results['energy_metrics']['mse'],
+                    'train_s_percent_mse': train_results['s_percent_metrics']['mse'],
+                    'train_p_percent_mse': train_results['p_percent_metrics']['mse'],
+                    'train_d_percent_mse': train_results['d_percent_metrics']['mse'],
+                    'train_f_percent_mse': train_results['f_percent_metrics']['mse'],
                     'val_occupation_mse': val_results['occupation_metrics']['mse'],
                     'val_keibo_mse': val_results['keibo_metrics']['mse'],
                     'val_energy_mse': val_results['energy_metrics']['mse'],
+                    'val_s_percent_mse': val_results['s_percent_metrics']['mse'],
+                    'val_p_percent_mse': val_results['p_percent_metrics']['mse'],
+                    'val_d_percent_mse': val_results['d_percent_metrics']['mse'],
+                    'val_f_percent_mse': val_results['f_percent_metrics']['mse'],
                 }
                 
                 # Add weights if available
@@ -231,7 +239,11 @@ class OrbitalGAMESSTrainer:
                     log_dict.update({
                         'occupation_weight': train_results['losses']['occupation_weight'],
                         'keibo_weight': train_results['losses']['keibo_weight'],
-                        'energy_weight': train_results['losses']['energy_weight']
+                        'energy_weight': train_results['losses']['energy_weight'],
+                        's_weight': train_results['losses']['s_weight'],
+                        'p_weight': train_results['losses']['p_weight'],
+                        'd_weight': train_results['losses']['d_weight'],
+                        'f_weight': train_results['losses']['f_weight']
                     })
                 
                 wandb.log(log_dict)
@@ -264,6 +276,12 @@ class OrbitalGAMESSTrainer:
               f"MSE={train_results['keibo_metrics']['mse']:.6f}/{val_results['keibo_metrics']['mse']:.6f} | "
               f"Eng: L={losses['energy_loss']:.4f}/{val_losses['energy_loss']:.4f} "
               f"MSE={train_results['energy_metrics']['mse']:.1f}/{val_results['energy_metrics']['mse']:.1f}")
+        
+        # Hybridization metrics line
+        print(f"  Hyb: s%={val_results['s_percent_metrics']['mse']:.4f} "
+              f"p%={val_results['p_percent_metrics']['mse']:.4f} "
+              f"d%={val_results['d_percent_metrics']['mse']:.4f} "
+              f"f%={val_results['f_percent_metrics']['mse']:.4f}")
     
     def plot_training_curves(self, save_path: str = None, title_suffix: str = ""):
         """Plot training curves for orbital tasks."""

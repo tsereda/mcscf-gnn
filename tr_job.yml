@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-hyb
+  name: mcscf-gnn-hyb3
 spec:
   backoffLimit: 0
   template:

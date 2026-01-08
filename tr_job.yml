@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-hyb5
+  name: mcscf-gnn-hyb
 spec:
   backoffLimit: 0
   template:
@@ -48,7 +48,7 @@ spec:
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              wandb agent timgsereda/gamess-gnn-sweep/4yparzoi
+              wandb agent timgsereda/gamess-gnn-sweep/ijub1tpo
         
           volumeMounts:
             - name: workspace

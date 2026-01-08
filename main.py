@@ -222,7 +222,6 @@ def main():
         print(f"Num Layers: {config['model']['num_layers']}")
         print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
         print(f"RBF Distance Encoding: {config['model']['use_rbf_distance']} (num_rbf={config['model']['num_rbf']}, cutoff={config['model']['rbf_cutoff']})")
-        print(f"Edge Hybridization Features: {config['model']['use_edge_hybridization']}")
         print(f"Epochs: {config['training']['num_epochs']}")
     else:
         config = default_config

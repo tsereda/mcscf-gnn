@@ -75,7 +75,7 @@ class OrbitalEmbedding(nn.Module):
         self.m_quantum_embedding = nn.Embedding(7, self.m_quantum_embed_dim)     # -3 to +3
         
         # Calculate actual total input features
-        input_features = 5  # [occupation, s%, p%, d%, f%] - continuous features only
+        input_features = 1  # [occupation] - only continuous feature after embeddings
         embedding_features = self.atomic_embed_dim + self.orbital_type_embed_dim + self.m_quantum_embed_dim
         total_features = input_features + embedding_features
         
@@ -91,8 +91,8 @@ class OrbitalEmbedding(nn.Module):
     def forward(self, orbital_features: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            orbital_features: [num_orbitals, 8] tensor with features:
-                [atomic_num, orbital_type, m_quantum, occupation, s%, p%, d%, f%]
+            orbital_features: [num_orbitals, 4] tensor with features:
+                [atomic_num, orbital_type, m_quantum, occupation]
         
         Returns:
             embedded_features: [num_orbitals, orbital_embedding_dim]
@@ -107,12 +107,12 @@ class OrbitalEmbedding(nn.Module):
         orbital_embeds = self.orbital_type_embedding(orbital_types)
         m_quantum_embeds = self.m_quantum_embedding(m_quantums)
         
-        # Use only continuous features (skip atomic_num, orbital_type, m_quantum)
-        continuous_features = orbital_features[:, 3:]  # occupation, s%, p%, d%, f%
+        # Extract continuous feature (occupation)
+        occupation = orbital_features[:, 3:4]  # Keep 2D shape [num_orbitals, 1]
         
         # Concatenate all features
         combined_features = torch.cat([
-            continuous_features,
+            occupation,
             atomic_embeds,
             orbital_embeds,
             m_quantum_embeds

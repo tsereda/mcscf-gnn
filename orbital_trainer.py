@@ -35,13 +35,6 @@ class OrbitalGAMESSTrainer:
         self.wandb_enabled = wandb_enabled
         self.use_uncertainty_weighting = use_uncertainty_weighting
         
-        # Initialize optimizer with weight decay
-        self.optimizer = optim.Adam(
-            model.parameters(), 
-            lr=learning_rate,
-            weight_decay=weight_decay
-        )
-        
         # Choose loss function based on settings
         self.use_gradnorm = use_gradnorm
         
@@ -69,6 +62,18 @@ class OrbitalGAMESSTrainer:
                 print(f"Using uncertainty weighting for 7 tasks (automatic balancing)")
             else:
                 print(f"Using static loss weights (occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight})")
+        
+        # Initialize optimizer AFTER loss function so we can include loss parameters
+        # Combine model and loss function parameters
+        params_to_optimize = list(model.parameters())
+        if use_uncertainty_weighting or use_gradnorm:
+            params_to_optimize += list(self.loss_fn.parameters())
+        
+        self.optimizer = optim.Adam(
+            params_to_optimize, 
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
         
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay

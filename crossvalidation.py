@@ -403,13 +403,15 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 normalizer.normalize_batch(batch)
             
             # Get predictions (in normalized space if normalizer is used)
-            occupation_pred, keibo_pred, energy_pred = model(batch)
+            # Model returns 7 predictions: occupation, keibo, energy, s%, p%, d%, f%
+            preds = model(batch)
+            occupation_pred, keibo_pred, energy_pred = preds[0], preds[1], preds[2]
+            # Note: s%, p%, d%, f% predictions (preds[3:7]) are not used in this validation report
             
             # Denormalize predictions if normalizer was used
             if normalizer:
-                occupation_pred, keibo_pred, energy_pred = normalizer.denormalize_predictions(
-                    occupation_pred, keibo_pred, energy_pred
-                )
+                denorm_preds = normalizer.denormalize_predictions(*preds)
+                occupation_pred, keibo_pred, energy_pred = denorm_preds[0], denorm_preds[1], denorm_preds[2]
             
             # Use original targets for comparison
             batch.y = original_occupation_targets

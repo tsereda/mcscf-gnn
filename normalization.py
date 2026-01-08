@@ -149,24 +149,37 @@ class DataNormalizer:
         batch.global_y = self.normalize_value(batch.global_y, 'global')
     
     def denormalize_predictions(self, 
-                                node_pred: torch.Tensor, 
-                                edge_pred: torch.Tensor, 
-                                global_pred: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+                                occupation_pred: torch.Tensor, 
+                                keibo_pred: torch.Tensor, 
+                                energy_pred: torch.Tensor,
+                                s_percent_pred: torch.Tensor,
+                                p_percent_pred: torch.Tensor,
+                                d_percent_pred: torch.Tensor,
+                                f_percent_pred: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
-        Denormalize model predictions.
+        Denormalize model predictions for 7-task architecture.
         
         Args:
-            node_pred: Normalized node predictions
-            edge_pred: Normalized edge predictions
-            global_pred: Normalized global predictions
+            occupation_pred: Normalized occupation predictions (node-level)
+            keibo_pred: Normalized KEI-BO predictions (edge-level)
+            energy_pred: Normalized energy predictions (global-level)
+            s_percent_pred: S% predictions (node-level, no normalization needed - already 0-1)
+            p_percent_pred: P% predictions (node-level, no normalization needed - already 0-1)
+            d_percent_pred: D% predictions (node-level, no normalization needed - already 0-1)
+            f_percent_pred: F% predictions (node-level, no normalization needed - already 0-1)
         
         Returns:
-            Tuple of denormalized (node_pred, edge_pred, global_pred)
+            Tuple of (occupation, keibo, energy, s%, p%, d%, f%)
+            Only occupation, keibo, and energy are denormalized; hybridization % are passed through
         """
         return (
-            self.denormalize_value(node_pred, 'node'),
-            self.denormalize_value(edge_pred, 'edge'),
-            self.denormalize_value(global_pred, 'global')
+            self.denormalize_value(occupation_pred, 'node'),
+            self.denormalize_value(keibo_pred, 'edge'),
+            self.denormalize_value(energy_pred, 'global'),
+            s_percent_pred,  # No denormalization - already bounded 0-1
+            p_percent_pred,  # No denormalization - already bounded 0-1
+            d_percent_pred,  # No denormalization - already bounded 0-1
+            f_percent_pred   # No denormalization - already bounded 0-1
         )
     
     def save(self, filepath: str) -> None:

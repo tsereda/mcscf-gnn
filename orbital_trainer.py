@@ -34,6 +34,7 @@ class OrbitalGAMESSTrainer:
         self.model = model.to(self.device)
         self.wandb_enabled = wandb_enabled
         self.use_uncertainty_weighting = use_uncertainty_weighting
+        self.include_hybridization = model.include_hybridization
         
         # Choose loss function based on settings
         self.use_gradnorm = use_gradnorm
@@ -41,27 +42,34 @@ class OrbitalGAMESSTrainer:
         if use_gradnorm and use_uncertainty_weighting:
             raise ValueError("Cannot use both GradNorm and uncertainty weighting simultaneously. Choose one.")
         
+        # Determine number of tasks based on hybridization inclusion
+        num_tasks = 7 if self.include_hybridization else 3
+        
         if use_gradnorm:
+            initial_weights = [occupation_weight, keibo_weight, energy_weight]
+            if self.include_hybridization:
+                initial_weights += [hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
+            
             self.loss_fn = GradNormLoss(
-                num_tasks=7,  # Updated to 7 tasks
+                num_tasks=num_tasks,
                 alpha=gradnorm_alpha,
                 learning_rate=gradnorm_lr,
-                initial_weights=[occupation_weight, keibo_weight, energy_weight, 
-                               hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
+                initial_weights=initial_weights
             )
             self.loss_fn = self.loss_fn.to(device)  # Move loss function to device
-            print(f"Using GradNorm loss with 7 tasks (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
+            print(f"Using GradNorm loss with {num_tasks} tasks (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
         else:
             self.loss_fn = OrbitalMultiTaskLoss(
                 use_uncertainty_weighting=use_uncertainty_weighting,
                 occupation_weight=occupation_weight, 
                 keibo_weight=keibo_weight, 
                 energy_weight=energy_weight,
-                hybrid_weight=hybrid_weight
+                hybrid_weight=hybrid_weight,
+                include_hybridization=self.include_hybridization
             )
             self.loss_fn = self.loss_fn.to(device)  # Move loss function to device
             if use_uncertainty_weighting:
-                print(f"Using uncertainty weighting for 7 tasks (automatic balancing)")
+                print(f"Using uncertainty weighting for {num_tasks} tasks (automatic balancing)")
             else:
                 print(f"Using static loss weights (occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight})")
         

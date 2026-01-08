@@ -103,7 +103,8 @@ def main():
             'orbital_embedding_dim': 32,
             'use_rbf_distance': False,
             'num_rbf': 50,
-            'rbf_cutoff': 5.0
+            'rbf_cutoff': 5.0,
+            'include_hybridization': True
         },
         'training': {
             'learning_rate': 0.0001,
@@ -191,15 +192,18 @@ def main():
             config['model']['rbf_cutoff']
         )
         
-        # Uncertainty weighting parameter
-        config['training']['use_uncertainty_weighting'] = getattr(
-            wandb.config,
-            'use_uncertainty_weighting',
-            config['training']['use_uncertainty_weighting']
-        )
-        
+        # Loss balancing strategy - handle both GradNorm and uncertainty weighting
         strategy = getattr(wandb.config, 'loss_balancing_strategy', 'static')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
+        config['training']['use_uncertainty_weighting'] = (strategy == 'uncertainty_weighting')
+        config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
+        
+        # Hybridization parameter
+        config['model']['include_hybridization'] = getattr(
+            wandb.config,
+            'include_hybridization',
+            True  # Default to True for backward compatibility
+        )
         
         # Validation configuration
         config['data']['validation_mode'] = getattr(wandb.config, 'validation_method', 'per_element')
@@ -217,6 +221,7 @@ def main():
             print(f"Random Seed: {config['data']['random_seed']}")
         print(f"Normalization: {'Global' if wandb.config.normalization_global else 'Per-fold'} (enabled={wandb.config.normalization_enabled})")
         print(f"Loss Balancing Strategy: {strategy}")
+        print(f"Include Hybridization: {config['model']['include_hybridization']}")
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.keibo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
         print(f"Num Layers: {config['model']['num_layers']}")
@@ -423,7 +428,8 @@ def main():
                 orbital_embedding_dim=config['model']['orbital_embedding_dim'],
                 use_rbf_distance=config['model']['use_rbf_distance'],
                 num_rbf=config['model']['num_rbf'],
-                rbf_cutoff=config['model']['rbf_cutoff']
+                rbf_cutoff=config['model']['rbf_cutoff'],
+                include_hybridization=config['model']['include_hybridization']
             )
             
             # Create trainer

@@ -243,13 +243,15 @@ class OrbitalTripleTaskGNN(nn.Module):
                  global_pooling_method: str = 'attention',
                  use_rbf_distance: bool = False,
                  num_rbf: int = 50,
-                 rbf_cutoff: float = 5.0):
+                 rbf_cutoff: float = 5.0,
+                 include_hybridization: bool = True):
         super(OrbitalTripleTaskGNN, self).__init__()
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.global_pooling_method = global_pooling_method
         self.use_rbf_distance = use_rbf_distance
+        self.include_hybridization = include_hybridization
         
         # RBF distance encoding (optional)
         if use_rbf_distance:
@@ -389,11 +391,18 @@ class OrbitalTripleTaskGNN(nn.Module):
         # Predict orbital occupations
         occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
-        # Predict hybridization percentages
-        s_percent_pred = self.s_percent_head(orbital_embeddings).squeeze(-1)
-        p_percent_pred = self.p_percent_head(orbital_embeddings).squeeze(-1)
-        d_percent_pred = self.d_percent_head(orbital_embeddings).squeeze(-1)
-        f_percent_pred = self.f_percent_head(orbital_embeddings).squeeze(-1)
+        # Predict hybridization percentages (conditionally)
+        if self.include_hybridization:
+            s_percent_pred = self.s_percent_head(orbital_embeddings).squeeze(-1)
+            p_percent_pred = self.p_percent_head(orbital_embeddings).squeeze(-1)
+            d_percent_pred = self.d_percent_head(orbital_embeddings).squeeze(-1)
+            f_percent_pred = self.f_percent_head(orbital_embeddings).squeeze(-1)
+        else:
+            # Return dummy predictions if not included
+            s_percent_pred = torch.zeros_like(occupation_pred)
+            p_percent_pred = torch.zeros_like(occupation_pred)
+            d_percent_pred = torch.zeros_like(occupation_pred)
+            f_percent_pred = torch.zeros_like(occupation_pred)
         
         # Predict KEI-BO values (edge predictions)
         keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
@@ -461,11 +470,15 @@ class OrbitalMultiTaskLoss(nn.Module):
                  occupation_weight: float = 1.0, 
                  keibo_weight: float = 1.0, 
                  energy_weight: float = 1.0,
-                 hybrid_weight: float = 1.0):
+                 hybrid_weight: float = 1.0,
+                 include_hybridization: bool = True):
         super(OrbitalMultiTaskLoss, self).__init__()
         
         self.use_uncertainty_weighting = use_uncertainty_weighting
+        self.include_hybridization = include_hybridization
         self.mse = nn.MSELoss()
+        
+        num_tasks = 7 if include_hybridization else 3
         
         if use_uncertainty_weighting:
             # Learnable log variance parameters for each task
@@ -473,18 +486,22 @@ class OrbitalMultiTaskLoss(nn.Module):
             self.log_var_occupation = nn.Parameter(torch.zeros(1))
             self.log_var_keibo = nn.Parameter(torch.zeros(1))
             self.log_var_energy = nn.Parameter(torch.zeros(1))
-            self.log_var_s_percent = nn.Parameter(torch.zeros(1))
-            self.log_var_p_percent = nn.Parameter(torch.zeros(1))
-            self.log_var_d_percent = nn.Parameter(torch.zeros(1))
-            self.log_var_f_percent = nn.Parameter(torch.zeros(1))
-            print("Using uncertainty weighting for 7 tasks (automatic balancing)")
+            if include_hybridization:
+                self.log_var_s_percent = nn.Parameter(torch.zeros(1))
+                self.log_var_p_percent = nn.Parameter(torch.zeros(1))
+                self.log_var_d_percent = nn.Parameter(torch.zeros(1))
+                self.log_var_f_percent = nn.Parameter(torch.zeros(1))
+            print(f"Using uncertainty weighting for {num_tasks} tasks (automatic balancing)")
         else:
             # Manual weights (backward compatibility)
             self.occupation_weight = occupation_weight
             self.keibo_weight = keibo_weight
             self.energy_weight = energy_weight
             self.hybrid_weight = hybrid_weight  # Same weight for all 4 hybridization tasks
-            print(f"Using manual weights: occ={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight}")
+            if include_hybridization:
+                print(f"Using manual weights: occ={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight}")
+            else:
+                print(f"Using manual weights (no hybridization): occ={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}")
     
     def forward(self, 
                 occupation_pred: torch.Tensor, 
@@ -515,10 +532,12 @@ class OrbitalMultiTaskLoss(nn.Module):
         occupation_loss = self.mse(occupation_pred, occupation_target)
         keibo_loss = self.mse(keibo_pred, keibo_target)
         energy_loss = self.mse(energy_pred, energy_target)
-        s_percent_loss = self.mse(s_percent_pred, s_percent_target)
-        p_percent_loss = self.mse(p_percent_pred, p_percent_target)
-        d_percent_loss = self.mse(d_percent_pred, d_percent_target)
-        f_percent_loss = self.mse(f_percent_pred, f_percent_target)
+        
+        if self.include_hybridization:
+            s_percent_loss = self.mse(s_percent_pred, s_percent_target)
+            p_percent_loss = self.mse(p_percent_pred, p_percent_target)
+            d_percent_loss = self.mse(d_percent_pred, d_percent_target)
+            f_percent_loss = self.mse(f_percent_pred, f_percent_target)
         
         if self.use_uncertainty_weighting:
             # Ensure all losses are on the same device as the parameters
@@ -526,62 +545,78 @@ class OrbitalMultiTaskLoss(nn.Module):
             occupation_loss = occupation_loss.to(device)
             keibo_loss = keibo_loss.to(device)
             energy_loss = energy_loss.to(device)
-            s_percent_loss = s_percent_loss.to(device)
-            p_percent_loss = p_percent_loss.to(device)
-            d_percent_loss = d_percent_loss.to(device)
-            f_percent_loss = f_percent_loss.to(device)
             
             # Uncertainty-weighted loss: L = (1/2σ²) * loss + log(σ)
             # Equivalent to: L = exp(-log_var) * loss + log_var
             total_loss = (
                 torch.exp(-self.log_var_occupation) * occupation_loss + self.log_var_occupation +
                 torch.exp(-self.log_var_keibo) * keibo_loss + self.log_var_keibo +
-                torch.exp(-self.log_var_energy) * energy_loss + self.log_var_energy +
-                torch.exp(-self.log_var_s_percent) * s_percent_loss + self.log_var_s_percent +
-                torch.exp(-self.log_var_p_percent) * p_percent_loss + self.log_var_p_percent +
-                torch.exp(-self.log_var_d_percent) * d_percent_loss + self.log_var_d_percent +
-                torch.exp(-self.log_var_f_percent) * f_percent_loss + self.log_var_f_percent
+                torch.exp(-self.log_var_energy) * energy_loss + self.log_var_energy
             )
+            
+            if self.include_hybridization:
+                s_percent_loss = s_percent_loss.to(device)
+                p_percent_loss = p_percent_loss.to(device)
+                d_percent_loss = d_percent_loss.to(device)
+                f_percent_loss = f_percent_loss.to(device)
+                total_loss += (
+                    torch.exp(-self.log_var_s_percent) * s_percent_loss + self.log_var_s_percent +
+                    torch.exp(-self.log_var_p_percent) * p_percent_loss + self.log_var_p_percent +
+                    torch.exp(-self.log_var_d_percent) * d_percent_loss + self.log_var_d_percent +
+                    torch.exp(-self.log_var_f_percent) * f_percent_loss + self.log_var_f_percent
+                )
             
             # Extract learned weights for logging
             occupation_weight = torch.exp(-self.log_var_occupation).item()
             keibo_weight = torch.exp(-self.log_var_keibo).item()
             energy_weight = torch.exp(-self.log_var_energy).item()
-            s_weight = torch.exp(-self.log_var_s_percent).item()
-            p_weight = torch.exp(-self.log_var_p_percent).item()
-            d_weight = torch.exp(-self.log_var_d_percent).item()
-            f_weight = torch.exp(-self.log_var_f_percent).item()
+            if self.include_hybridization:
+                s_weight = torch.exp(-self.log_var_s_percent).item()
+                p_weight = torch.exp(-self.log_var_p_percent).item()
+                d_weight = torch.exp(-self.log_var_d_percent).item()
+                f_weight = torch.exp(-self.log_var_f_percent).item()
+            else:
+                s_weight = p_weight = d_weight = f_weight = 0.0
         else:
             # Manual weighting
             total_loss = (
                 self.occupation_weight * occupation_loss + 
                 self.keibo_weight * keibo_loss + 
-                self.energy_weight * energy_loss +
-                self.hybrid_weight * (s_percent_loss + p_percent_loss + d_percent_loss + f_percent_loss)
+                self.energy_weight * energy_loss
             )
+            
+            if self.include_hybridization:
+                total_loss += self.hybrid_weight * (s_percent_loss + p_percent_loss + d_percent_loss + f_percent_loss)
             
             occupation_weight = self.occupation_weight
             keibo_weight = self.keibo_weight
             energy_weight = self.energy_weight
-            s_weight = p_weight = d_weight = f_weight = self.hybrid_weight
+            if self.include_hybridization:
+                s_weight = p_weight = d_weight = f_weight = self.hybrid_weight
+            else:
+                s_weight = p_weight = d_weight = f_weight = 0.0
         
         loss_dict = {
             'total_loss': total_loss.item(),
             'occupation_loss': occupation_loss.item(),
             'keibo_loss': keibo_loss.item(),
             'energy_loss': energy_loss.item(),
-            's_percent_loss': s_percent_loss.item(),
-            'p_percent_loss': p_percent_loss.item(),
-            'd_percent_loss': d_percent_loss.item(),
-            'f_percent_loss': f_percent_loss.item(),
             'occupation_weight': occupation_weight,
             'keibo_weight': keibo_weight,
             'energy_weight': energy_weight,
-            's_weight': s_weight,
-            'p_weight': p_weight,
-            'd_weight': d_weight,
-            'f_weight': f_weight
         }
+        
+        if self.include_hybridization:
+            loss_dict.update({
+                's_percent_loss': s_percent_loss.item(),
+                'p_percent_loss': p_percent_loss.item(),
+                'd_percent_loss': d_percent_loss.item(),
+                'f_percent_loss': f_percent_loss.item(),
+                's_weight': s_weight,
+                'p_weight': p_weight,
+                'd_weight': d_weight,
+                'f_weight': f_weight
+            })
         
         return total_loss, loss_dict
 
@@ -608,7 +643,8 @@ def create_orbital_model(orbital_input_dim: int = 4,
                         global_pooling_method: str = 'attention',
                         use_rbf_distance: bool = False,
                         num_rbf: int = 50,
-                        rbf_cutoff: float = 5.0) -> OrbitalTripleTaskGNN:
+                        rbf_cutoff: float = 5.0,
+                        include_hybridization: bool = True) -> OrbitalTripleTaskGNN:
     """Factory function to create the orbital-centric model"""
     return OrbitalTripleTaskGNN(
         orbital_input_dim=orbital_input_dim,
@@ -621,7 +657,8 @@ def create_orbital_model(orbital_input_dim: int = 4,
         global_pooling_method=global_pooling_method,
         use_rbf_distance=use_rbf_distance,
         num_rbf=num_rbf,
-        rbf_cutoff=rbf_cutoff
+        rbf_cutoff=rbf_cutoff,
+        include_hybridization=include_hybridization
     )
 
 

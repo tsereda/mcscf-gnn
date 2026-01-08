@@ -31,7 +31,10 @@ parameters:
     values: ['sum', 'mean', 'attention']
   
   loss_balancing_strategy:
-    values: ['static', 'gradnorm', 'first_epoch']
+    values: ['static', 'gradnorm', 'first_epoch', 'uncertainty_weighting']
+
+  include_hybridization:
+    values: [true, false]
 
   occupation_weight:
     values: [1, 2]
@@ -63,10 +66,6 @@ parameters:
   
   rbf_cutoff:
     value: 5.0  # Maximum distance for RBF centers in Angstroms
-
-  # Uncertainty Weighting (automatic task balancing)
-  use_uncertainty_weighting:
-    values: [true, false]
 
 command:
   - ${env}

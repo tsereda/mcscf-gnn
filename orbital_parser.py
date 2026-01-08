@@ -204,8 +204,9 @@ class OrbitalGAMESSParser:
         """Create orbital-level data structure using 1s/4-orbital rule"""
         orbital_data = {
             'orbital_positions': [],
-            'orbital_features': [],
+            'orbital_features': [],  # Now only 4 features: atomic_num, orbital_type, m_quantum, occupation
             'orbital_occupations': [],
+            'orbital_hybridization': [],  # NEW: s%, p%, d%, f% as targets
             'parent_atoms': [],
             'orbital_types': [],
             'orbital_m_quantum': []
@@ -245,33 +246,29 @@ class OrbitalGAMESSParser:
                 orbital_data['orbital_m_quantum'].append(m_quantums[i])
                 orbital_data['orbital_occupations'].append(occupation)
                 
-                # Create feature vector: [atomic_num, orbital_type, m_quantum, occupation, s%, p%, d%, f%]
+                # INPUT FEATURES: Only 4 features [atomic_num, orbital_type, m_quantum, occupation]
+                features = [
+                    atomic_number,
+                    0 if orbital_types[i] == 'S' else 1,  # S=0, P=1
+                    m_quantums[i],
+                    occupation
+                ]
+                orbital_data['orbital_features'].append(features)
+                
+                # TARGET: Hybridization percentages [s%, p%, d%, f%]
                 if orbital_chars and orbital_idx + 1 in orbital_chars:
                     chars = orbital_chars[orbital_idx + 1]
-                    features = [
-                        atomic_number,
-                        0 if orbital_types[i] == 'S' else 1,  # S=0, P=1
-                        m_quantums[i],
-                        occupation,
-                        chars['S'],
-                        chars['P'],
-                        chars['D'],
-                        chars['F']
-                    ]
+                    hybridization = [chars['S'], chars['P'], chars['D'], chars['F']]
                 else:
-                    # Default features without character data
-                    features = [
-                        atomic_number,
-                        0 if orbital_types[i] == 'S' else 1,  # S=0, P=1
-                        m_quantums[i],
-                        occupation,
+                    # Default hybridization based on orbital type
+                    hybridization = [
                         1.0 if orbital_types[i] == 'S' else 0.0,  # S character
                         1.0 if orbital_types[i] == 'P' else 0.0,  # P character
                         0.0,  # D character
                         0.0   # F character
                     ]
+                orbital_data['orbital_hybridization'].append(hybridization)
                 
-                orbital_data['orbital_features'].append(features)
                 orbital_idx += 1
                 
                 if self.debug:
@@ -289,11 +286,14 @@ class OrbitalGAMESSParser:
         
         num_orbitals = len(orbital_data['orbital_features'])
         
-        # Node features: orbital-level features
+        # Node features: 4 input features [atomic_num, orbital_type, m_quantum, occupation]
         node_features = torch.tensor(orbital_data['orbital_features'], dtype=torch.float)
         
         # Node targets: orbital occupations from density matrix diagonal
         node_targets = torch.tensor(orbital_data['orbital_occupations'], dtype=torch.float).view(-1, 1)
+        
+        # Hybridization targets: [s%, p%, d%, f%] for each orbital
+        hybrid_targets = torch.tensor(orbital_data['orbital_hybridization'], dtype=torch.float)
         
         # Global target: MCSCF energy
         global_target = torch.tensor([final_energy], dtype=torch.float).view(-1, 1)
@@ -339,6 +339,7 @@ class OrbitalGAMESSParser:
             y=node_targets,
             edge_y=torch.tensor(edge_targets, dtype=torch.float).view(-1, 1),
             global_y=global_target,
+            hybrid_y=hybrid_targets,  # NEW: Hybridization targets [N_orbitals x 4]
             pos=torch.tensor(orbital_positions, dtype=torch.float),
             num_nodes=num_orbitals
         )

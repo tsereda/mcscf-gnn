@@ -103,8 +103,7 @@ def main():
             'orbital_embedding_dim': 32,
             'use_rbf_distance': False,
             'num_rbf': 50,
-            'rbf_cutoff': 5.0,
-            'use_edge_hybridization': False
+            'rbf_cutoff': 5.0
         },
         'training': {
             'learning_rate': 0.0001,
@@ -114,7 +113,9 @@ def main():
             'print_frequency': 50,
             'occupation_weight': 1.5,
             'keibo_weight': 2.0,
-            'energy_weight': 0.1
+            'energy_weight': 0.1,
+            'hybrid_weight': 1.0,
+            'use_uncertainty_weighting': True
         },
         'gradnorm': {
             'enabled': False,
@@ -189,15 +190,16 @@ def main():
             'rbf_cutoff',
             config['model']['rbf_cutoff']
         )
-        config['model']['use_edge_hybridization'] = getattr(
+        
+        # Uncertainty weighting parameter
+        config['training']['use_uncertainty_weighting'] = getattr(
             wandb.config,
-            'use_edge_hybridization',
-            config['model']['use_edge_hybridization']
+            'use_uncertainty_weighting',
+            config['training']['use_uncertainty_weighting']
         )
         
-        strategy = getattr(wandb.config, 'loss_balancing_strategy', 'gradnorm')
+        strategy = getattr(wandb.config, 'loss_balancing_strategy', 'static')
         config['gradnorm']['enabled'] = (strategy == 'gradnorm')
-        config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
         
         # Validation configuration
         config['data']['validation_mode'] = getattr(wandb.config, 'validation_method', 'per_element')
@@ -422,8 +424,7 @@ def main():
                 orbital_embedding_dim=config['model']['orbital_embedding_dim'],
                 use_rbf_distance=config['model']['use_rbf_distance'],
                 num_rbf=config['model']['num_rbf'],
-                rbf_cutoff=config['model']['rbf_cutoff'],
-                use_edge_hybridization=config['model']['use_edge_hybridization']
+                rbf_cutoff=config['model']['rbf_cutoff']
             )
             
             # Create trainer
@@ -434,11 +435,12 @@ def main():
                 occupation_weight=config['training']['occupation_weight'],
                 keibo_weight=config['training']['keibo_weight'],
                 energy_weight=config['training']['energy_weight'],
+                hybrid_weight=config['training'].get('hybrid_weight', 1.0),
                 normalizer=normalizer,
+                use_uncertainty_weighting=config['training'].get('use_uncertainty_weighting', True),
                 use_gradnorm=config['gradnorm']['enabled'],
                 gradnorm_alpha=config['gradnorm']['alpha'],
                 gradnorm_lr=config['gradnorm']['learning_rate'],
-                use_first_epoch_weighting=config['use_first_epoch_weighting'],
                 wandb_enabled=is_sweep
             )
             

@@ -5,7 +5,7 @@ import numpy as np
 from typing import List, Dict, Optional
 import os
 
-from orbital_gnn import OrbitalTripleTaskGNN, OrbitalTripleTaskLoss, compute_metrics
+from orbital_gnn import OrbitalTripleTaskGNN, OrbitalMultiTaskLoss, compute_metrics
 from orbital_parser import OrbitalGAMESSParser
 from visualization import plot_training_curves
 from normalization import DataNormalizer
@@ -21,18 +21,19 @@ class OrbitalGAMESSTrainer:
                  occupation_weight: float,
                  keibo_weight: float, 
                  energy_weight: float,
+                 hybrid_weight: float = 1.0,
                  normalizer: Optional[DataNormalizer] = None,
+                 use_uncertainty_weighting: bool = True,
                  use_gradnorm: bool = False,
                  gradnorm_alpha: float = 1.5,
                  gradnorm_lr: float = 0.025,
-                 use_first_epoch_weighting: bool = False,
                  wandb_enabled: bool = False,
                  device: str = None):
         
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
         self.wandb_enabled = wandb_enabled
-        self.use_first_epoch_weighting = use_first_epoch_weighting
+        self.use_uncertainty_weighting = use_uncertainty_weighting
         
         # Initialize optimizer with weight decay
         self.optimizer = optim.Adam(
@@ -44,33 +45,36 @@ class OrbitalGAMESSTrainer:
         # Choose loss function based on settings
         self.use_gradnorm = use_gradnorm
         
-        if use_gradnorm and use_first_epoch_weighting:
-            raise ValueError("Cannot use both GradNorm and first-epoch weighting simultaneously. Choose one.")
+        if use_gradnorm and use_uncertainty_weighting:
+            raise ValueError("Cannot use both GradNorm and uncertainty weighting simultaneously. Choose one.")
         
         if use_gradnorm:
             self.loss_fn = GradNormLoss(
-                num_tasks=3,
+                num_tasks=7,  # Updated to 7 tasks
                 alpha=gradnorm_alpha,
                 learning_rate=gradnorm_lr,
-                initial_weights=[occupation_weight, keibo_weight, energy_weight]
+                initial_weights=[occupation_weight, keibo_weight, energy_weight, 
+                               hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
             )
-            print(f"Using GradNorm loss (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
-        elif use_first_epoch_weighting:
-            self.loss_fn = OrbitalTripleTaskLoss(
-                occupation_weight, keibo_weight, energy_weight,
-                use_first_epoch_weighting=True
-            )
-            print(f"Using first-epoch loss weighting (initial: occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight})")
-            print(f"  ⚠️  Weights will be recomputed from first batch losses")
+            print(f"Using GradNorm loss with 7 tasks (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
         else:
-            self.loss_fn = OrbitalTripleTaskLoss(occupation_weight, keibo_weight, energy_weight)
-            print(f"Using static loss weights (occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight})")
+            self.loss_fn = OrbitalMultiTaskLoss(
+                use_uncertainty_weighting=use_uncertainty_weighting,
+                occupation_weight=occupation_weight, 
+                keibo_weight=keibo_weight, 
+                energy_weight=energy_weight,
+                hybrid_weight=hybrid_weight
+            )
+            if use_uncertainty_weighting:
+                print(f"Using uncertainty weighting for 7 tasks (automatic balancing)")
+            else:
+                print(f"Using static loss weights (occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight})")
         
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.normalizer = normalizer
         
-        self.task_types = ['occupation', 'keibo', 'energy']
+        self.task_types = ['occupation', 'keibo', 'energy', 's_percent', 'p_percent', 'd_percent', 'f_percent']
         self.train_losses, self.val_losses = [], []
         self.train_metrics = {task: [] for task in self.task_types}
         self.val_metrics = {task: [] for task in self.task_types}
@@ -93,7 +97,16 @@ class OrbitalGAMESSTrainer:
                 data = data.to(self.device)
                 
                 # Store original targets for metrics computation (before normalization)
-                original_targets = [data.y.clone(), data.edge_y.clone(), data.global_y.clone()]
+                # 7 targets: occupation, keibo, energy, s%, p%, d%, f%
+                original_targets = [
+                    data.y.clone(), 
+                    data.edge_y.clone(), 
+                    data.global_y.clone(),
+                    data.hybrid_y[:, 0:1].clone(),  # s%
+                    data.hybrid_y[:, 1:2].clone(),  # p%
+                    data.hybrid_y[:, 2:3].clone(),  # d%
+                    data.hybrid_y[:, 3:4].clone()   # f%
+                ]
                 
                 # Apply normalization if normalizer is provided
                 if self.normalizer:
@@ -102,9 +115,19 @@ class OrbitalGAMESSTrainer:
                 if is_training:
                     self.optimizer.zero_grad()
                 
-                # Forward pass: occupation_pred, keibo_pred, energy_pred
+                # Forward pass: returns 7 predictions
                 preds = self.model(data)
-                targs = [data.y, data.edge_y, data.global_y]
+                
+                # Prepare targets: occupation, keibo, energy, s%, p%, d%, f%
+                targs = [
+                    data.y, 
+                    data.edge_y, 
+                    data.global_y,
+                    data.hybrid_y[:, 0:1],  # s%
+                    data.hybrid_y[:, 1:2],  # p%
+                    data.hybrid_y[:, 2:3],  # d%
+                    data.hybrid_y[:, 3:4]   # f%
+                ]
                 
                 # Compute loss based on whether GradNorm is enabled
                 if self.use_gradnorm and is_training:

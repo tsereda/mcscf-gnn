@@ -147,10 +147,11 @@ class OrbitalGAMESSTrainer:
                 
                 # Compute loss based on whether GradNorm is enabled
                 if self.use_gradnorm and is_training:
-                    # GradNorm needs model parameters for gradient computation
+                    # GradNorm only handles 3 tasks: occupation, keibo, energy
+                    # Pass only first 3 predictions and first 3 targets
                     model_params = list(self.model.parameters())
                     total_loss, loss_dict = self.loss_fn(
-                        *preds, *targs,
+                        *preds[:3], *targs[:3],
                         model_parameters=model_params,
                         update_weights=True
                     )
@@ -158,7 +159,7 @@ class OrbitalGAMESSTrainer:
                     # Standard loss or validation
                     if self.use_gradnorm:
                         total_loss, loss_dict = self.loss_fn(
-                            *preds, *targs,
+                            *preds[:3], *targs[:3],
                             model_parameters=None,
                             update_weights=False
                         )
@@ -244,15 +245,20 @@ class OrbitalGAMESSTrainer:
                 
                 # Add weights if available
                 if 'occupation_weight' in train_results['losses']:
-                    log_dict.update({
+                    weight_log_dict = {
                         'occupation_weight': train_results['losses']['occupation_weight'],
                         'keibo_weight': train_results['losses']['keibo_weight'],
                         'energy_weight': train_results['losses']['energy_weight'],
-                        's_weight': train_results['losses']['s_weight'],
-                        'p_weight': train_results['losses']['p_weight'],
-                        'd_weight': train_results['losses']['d_weight'],
-                        'f_weight': train_results['losses']['f_weight']
-                    })
+                    }
+                    # Add hybridization weights only if they exist
+                    if 's_weight' in train_results['losses']:
+                        weight_log_dict.update({
+                            's_weight': train_results['losses']['s_weight'],
+                            'p_weight': train_results['losses']['p_weight'],
+                            'd_weight': train_results['losses']['d_weight'],
+                            'f_weight': train_results['losses']['f_weight']
+                        })
+                    log_dict.update(weight_log_dict)
                 
                 wandb.log(log_dict)
             

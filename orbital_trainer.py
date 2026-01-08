@@ -55,7 +55,7 @@ class OrbitalGAMESSTrainer:
                 learning_rate=gradnorm_lr,
                 initial_weights=[occupation_weight, keibo_weight, energy_weight, 
                                hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
-            )
+            ).to(device)  # Move loss function to device
             print(f"Using GradNorm loss with 7 tasks (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
         else:
             self.loss_fn = OrbitalMultiTaskLoss(
@@ -64,7 +64,7 @@ class OrbitalGAMESSTrainer:
                 keibo_weight=keibo_weight, 
                 energy_weight=energy_weight,
                 hybrid_weight=hybrid_weight
-            )
+            ).to(device)  # Move loss function to device
             if use_uncertainty_weighting:
                 print(f"Using uncertainty weighting for 7 tasks (automatic balancing)")
             else:

@@ -521,6 +521,16 @@ class OrbitalMultiTaskLoss(nn.Module):
         f_percent_loss = self.mse(f_percent_pred, f_percent_target)
         
         if self.use_uncertainty_weighting:
+            # Ensure all losses are on the same device as the parameters
+            device = self.log_var_occupation.device
+            occupation_loss = occupation_loss.to(device)
+            keibo_loss = keibo_loss.to(device)
+            energy_loss = energy_loss.to(device)
+            s_percent_loss = s_percent_loss.to(device)
+            p_percent_loss = p_percent_loss.to(device)
+            d_percent_loss = d_percent_loss.to(device)
+            f_percent_loss = f_percent_loss.to(device)
+            
             # Uncertainty-weighted loss: L = (1/2σ²) * loss + log(σ)
             # Equivalent to: L = exp(-log_var) * loss + log_var
             total_loss = (

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-5
+  name: mcscf-gnn-10
 spec:
   backoffLimit: 0
   template:
@@ -48,7 +48,7 @@ spec:
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              wandb agent timgsereda/gamess-gnn-sweep/ia9q72mz
+              wandb agent timgsereda/gamess-gnn-sweep/yhhdvpit
         
           volumeMounts:
             - name: workspace

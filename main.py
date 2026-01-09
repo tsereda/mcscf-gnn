@@ -511,7 +511,7 @@ def main():
             print(f"{'='*70}")
             print(f"Average Validation MSE: {avg_val_mse:.6f}")
             print(f"  Occupation MSE: {avg_val_occupation_mse:.6f}")
-            print(f"  KEI-BO MSE: {avg_val_keibo_mse:.6f}")
+            print(f"  KEI-BO MSE: {avg_val_kei_bo_mse:.6f}")
             print(f"  Energy MSE: {avg_val_energy_mse:.6f}")
         
         print(f"\n{'='*70}")

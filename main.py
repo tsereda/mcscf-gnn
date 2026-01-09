@@ -30,7 +30,8 @@ from crossvalidation import (
     save_combined_orbital_results
 )
 from visualization import (
-    create_summary_plots, 
+# Global cache for parsed graphs to avoid re-parsing during cross-validation
+_GRAPH_CACHE = {}    create_summary_plots, 
     create_comprehensive_analysis,
     ModelVisualizer
 )
@@ -61,14 +62,33 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
     files_to_use = [f for f in all_files if f not in exclude_files]
     print(f"Using {len(files_to_use)}/{len(all_files)} files (excluding {len(exclude_files)} validation files)")
     
-    # Parse training files only
-    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
-    train_graphs = process_orbital_files(parser, files_to_use)
+    # Use cached graphs if available, otherwise parse and cache
+    train_graphs = []
+    files_to_parse = []
+    
+    for f in files_to_use:
+        if f in _GRAPH_CACHE:
+            train_graphs.append(_GRAPH_CACHE[f])
+        else:
+            files_to_parse.append(f)
+    
+    if files_to_parse:
+        print(f"Parsing {len(files_to_parse)} new files (using {len(train_graphs)} cached)...")
+        parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+        new_graphs = process_orbital_files(parser, files_to_parse)
+        
+        # Cache newly parsed graphs
+        for f, graph in zip(files_to_parse, new_graphs):
+            _GRAPH_CACHE[f] = graph
+        
+        train_graphs.extend(new_graphs)
+    else:
+        print(f"Using {len(train_graphs)} cached graphs (no parsing needed)")
     
     if len(train_graphs) == 0:
         raise ValueError("No valid training graphs found")
     
-    print(f"Successfully processed {len(train_graphs)} training graphs")
+    print(f"Total training graphs: {len(train_graphs)}")
     
     # Create temporary loader with training data only
     train_loader = DataLoader(train_graphs, batch_size=32, shuffle=False)

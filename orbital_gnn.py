@@ -311,37 +311,15 @@ class OrbitalTripleTaskGNN(nn.Module):
             nn.Linear(hidden_dim // 2, 1)
         )
         
-        # Hybridization prediction heads (4 separate heads for s%, p%, d%, f%)
-        self.s_percent_head = nn.Sequential(
+        # Hybridization prediction head (unified with softmax constraint)
+        # Predicts s%, p%, d%, f% simultaneously and applies softmax to ensure they sum to 1
+        # This enforces physical constraint that total orbital character = 100%
+        self.hybridization_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()  # Output between 0 and 1
-        )
-        
-        self.p_percent_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
-        )
-        
-        self.d_percent_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
-        )
-        
-        self.f_percent_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
+            nn.Linear(hidden_dim // 2, 4)  # Output 4 values for s, p, d, f
+            # Softmax applied in forward() to ensure sum = 1
         )
         
         # Global energy prediction
@@ -433,12 +411,15 @@ class OrbitalTripleTaskGNN(nn.Module):
         # Predict orbital occupations
         occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
-        # Predict hybridization percentages (conditionally)
+        # Predict hybridization percentages with softmax constraint (conditionally)
         if self.include_hybridization:
-            s_percent_pred = self.s_percent_head(orbital_embeddings).squeeze(-1)
-            p_percent_pred = self.p_percent_head(orbital_embeddings).squeeze(-1)
-            d_percent_pred = self.d_percent_head(orbital_embeddings).squeeze(-1)
-            f_percent_pred = self.f_percent_head(orbital_embeddings).squeeze(-1)
+            # Shape: [num_orbitals, 4] -> softmax -> [num_orbitals, 4] where each row sums to 1
+            hybridization_logits = self.hybridization_head(orbital_embeddings)  # [num_orbitals, 4]
+            hybridization_probs = torch.softmax(hybridization_logits, dim=-1)  # Ensure sum to 1
+            s_percent_pred = hybridization_probs[:, 0]  # s character
+            p_percent_pred = hybridization_probs[:, 1]  # p character
+            d_percent_pred = hybridization_probs[:, 2]  # d character
+            f_percent_pred = hybridization_probs[:, 3]  # f character
         else:
             # Return dummy predictions if not included
             s_percent_pred = torch.zeros_like(occupation_pred)

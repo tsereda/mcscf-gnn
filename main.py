@@ -30,8 +30,7 @@ from crossvalidation import (
     save_combined_orbital_results
 )
 from visualization import (
-# Global cache for parsed graphs to avoid re-parsing during cross-validation
-_GRAPH_CACHE = {}    create_summary_plots, 
+    create_summary_plots, 
     create_comprehensive_analysis,
     ModelVisualizer
 )
@@ -62,33 +61,14 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
     files_to_use = [f for f in all_files if f not in exclude_files]
     print(f"Using {len(files_to_use)}/{len(all_files)} files (excluding {len(exclude_files)} validation files)")
     
-    # Use cached graphs if available, otherwise parse and cache
-    train_graphs = []
-    files_to_parse = []
-    
-    for f in files_to_use:
-        if f in _GRAPH_CACHE:
-            train_graphs.append(_GRAPH_CACHE[f])
-        else:
-            files_to_parse.append(f)
-    
-    if files_to_parse:
-        print(f"Parsing {len(files_to_parse)} new files (using {len(train_graphs)} cached)...")
-        parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
-        new_graphs = process_orbital_files(parser, files_to_parse)
-        
-        # Cache newly parsed graphs
-        for f, graph in zip(files_to_parse, new_graphs):
-            _GRAPH_CACHE[f] = graph
-        
-        train_graphs.extend(new_graphs)
-    else:
-        print(f"Using {len(train_graphs)} cached graphs (no parsing needed)")
+    # Parse training files only
+    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    train_graphs = process_orbital_files(parser, files_to_use)
     
     if len(train_graphs) == 0:
         raise ValueError("No valid training graphs found")
     
-    print(f"Total training graphs: {len(train_graphs)}")
+    print(f"Successfully processed {len(train_graphs)} training graphs")
     
     # Create temporary loader with training data only
     train_loader = DataLoader(train_graphs, batch_size=32, shuffle=False)
@@ -133,7 +113,7 @@ def main():
             'batch_size': 16,
             'print_frequency': 50,
             'occupation_weight': 1.5,
-            'keibo_weight': 2.0,
+            'kei_bo_weight': 2.0,
             'energy_weight': 0.1,
             'hybrid_weight': 1.0,
             'use_uncertainty_weighting': True
@@ -176,7 +156,7 @@ def main():
         
         config['model']['global_pooling_method'] = wandb.config.pooling_method
         config['training']['occupation_weight'] = wandb.config.occupation_weight
-        config['training']['keibo_weight'] = wandb.config.keibo_weight
+        config['training']['kei_bo_weight'] = wandb.config.kei_bo_weight
         config['training']['energy_weight'] = wandb.config.energy_weight
         config['model']['hidden_dim'] = wandb.config.hidden_dim
         config['model']['orbital_embedding_dim'] = getattr(
@@ -250,7 +230,7 @@ def main():
         print(f"Loss Balancing Strategy: {strategy}")
         print(f"Include Hybridization: {config['model']['include_hybridization']}")
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
-        print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.keibo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
+        print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.kei_bo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
         print(f"Num Layers: {config['model']['num_layers']}")
         print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
@@ -271,7 +251,7 @@ def main():
     elif config['use_first_epoch_weighting']:
         print(f"  Loss Balancing: First-Epoch Weighting")
     else:
-        print(f"  Loss Balancing: Static (Occupation={config['training']['occupation_weight']}, KEI-BO={config['training']['keibo_weight']}, Energy={config['training']['energy_weight']})")
+        print(f"  Loss Balancing: Static (Occupation={config['training']['occupation_weight']}, KEI-BO={config['training']['kei_bo_weight']}, Energy={config['training']['energy_weight']})")
     
     norm_mode = "GLOBAL" if config['normalization'].get('global_norm', False) else "PER-FOLD"
     if config['normalization']['enabled']:
@@ -467,7 +447,7 @@ def main():
                 learning_rate=config['training']['learning_rate'],
                 weight_decay=config['training']['weight_decay'],
                 occupation_weight=config['training']['occupation_weight'],
-                keibo_weight=config['training']['keibo_weight'],
+                kei_bo_weight=config['training']['kei_bo_weight'],
                 energy_weight=config['training']['energy_weight'],
                 hybrid_weight=config['training'].get('hybrid_weight', 1.0),
                 normalizer=normalizer,
@@ -505,24 +485,24 @@ def main():
             
             # Print fold summary
             final_val_occupation = results['val_metrics']['occupation'][-1]
-            final_val_keibo = results['val_metrics']['keibo'][-1]
+            final_val_kei_bo = results['val_metrics']['kei_bo'][-1]
             final_val_energy = results['val_metrics']['energy'][-1]
             print(f"\nFold {fold_num + 1} Complete:")
             print(f"    Occupation: Val MSE={final_val_occupation['mse']:.6f}")
-            print(f"    KEI-BO: Val MSE={final_val_keibo['mse']:.6f}")
+            print(f"    KEI-BO: Val MSE={final_val_kei_bo['mse']:.6f}")
             print(f"    Energy: Val MSE={final_val_energy['mse']:.6f}")
         
         # Compute average metrics across folds for WandB
         if is_sweep and config['wandb']['enabled']:
             avg_val_occupation_mse = np.mean([r['val_metrics']['occupation'][-1]['mse'] for r in all_results])
-            avg_val_keibo_mse = np.mean([r['val_metrics']['keibo'][-1]['mse'] for r in all_results])
+            avg_val_kei_bo_mse = np.mean([r['val_metrics']['kei_bo'][-1]['mse'] for r in all_results])
             avg_val_energy_mse = np.mean([r['val_metrics']['energy'][-1]['mse'] for r in all_results])
-            avg_val_mse = (avg_val_occupation_mse + avg_val_keibo_mse + avg_val_energy_mse) / 3.0
+            avg_val_mse = (avg_val_occupation_mse + avg_val_kei_bo_mse + avg_val_energy_mse) / 3.0
             
             wandb.log({
                 'avg_val_mse': avg_val_mse,
                 'avg_val_occupation_mse': avg_val_occupation_mse,
-                'avg_val_keibo_mse': avg_val_keibo_mse,
+                'avg_val_kei_bo_mse': avg_val_kei_bo_mse,
                 'avg_val_energy_mse': avg_val_energy_mse
             })
             

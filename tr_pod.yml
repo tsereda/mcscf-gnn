@@ -62,7 +62,7 @@ spec:
           unzip /data1/dec20.zip
           sudo cp -r for-tim/ data1/
 
-          wandb agent timgsereda/gamess-gnn-sweep/dgv5niip
+          wandb agent timgsereda/gamess-gnn-sweep/58qnbmpt
           
           tail -f /dev/null
      

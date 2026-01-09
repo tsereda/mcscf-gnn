@@ -42,7 +42,7 @@ parameters:
   occupation_weight:
     values: [1, 2]
 
-  keibo_weight:
+  kei_bo_weight:
     value: 1
 
   energy_weight:

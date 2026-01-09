@@ -384,7 +384,7 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
     
     # Collect all predictions
     all_occupation_preds, all_occupation_targets = [], []
-    all_keibo_preds, all_keibo_targets = [], []
+    all_kei_bo_preds, all_kei_bo_targets = [], []
     all_energy_preds, all_energy_targets = [], []
     all_s_preds, all_s_targets = [], []
     all_p_preds, all_p_targets = [], []
@@ -399,7 +399,7 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
             
             # Store original targets BEFORE normalization
             original_occupation_targets = batch.y.clone()
-            original_keibo_targets = batch.edge_y.clone()
+            original_kei_bo_targets = batch.edge_y.clone()
             original_energy_targets = batch.global_y.clone()
             original_s_targets = batch.hybrid_y[:, 0:1].clone()
             original_p_targets = batch.hybrid_y[:, 1:2].clone()
@@ -411,20 +411,20 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 normalizer.normalize_batch(batch)
             
             # Get predictions (in normalized space if normalizer is used)
-            # Model returns 7 predictions: occupation, keibo, energy, s%, p%, d%, f%
+            # Model returns 7 predictions: occupation, kei_bo, energy, s%, p%, d%, f%
             preds = model(batch)
-            occupation_pred, keibo_pred, energy_pred = preds[0], preds[1], preds[2]
+            occupation_pred, kei_bo_pred, energy_pred = preds[0], preds[1], preds[2]
             s_pred, p_pred, d_pred, f_pred = preds[3], preds[4], preds[5], preds[6]
             
             # Denormalize predictions if normalizer was used
             if normalizer:
                 denorm_preds = normalizer.denormalize_predictions(*preds)
-                occupation_pred, keibo_pred, energy_pred = denorm_preds[0], denorm_preds[1], denorm_preds[2]
+                occupation_pred, kei_bo_pred, energy_pred = denorm_preds[0], denorm_preds[1], denorm_preds[2]
                 s_pred, p_pred, d_pred, f_pred = denorm_preds[3], denorm_preds[4], denorm_preds[5], denorm_preds[6]
             
             # Use original targets for comparison
             batch.y = original_occupation_targets
-            batch.edge_y = original_keibo_targets
+            batch.edge_y = original_kei_bo_targets
             batch.global_y = original_energy_targets
             
             # Process each molecule in the batch
@@ -441,8 +441,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 # Extract data for this molecule
                 mol_occupation_preds = occupation_pred[orbital_mask].cpu()
                 mol_occupation_targets = batch.y[orbital_mask].cpu()
-                mol_keibo_preds = keibo_pred[edge_mask].cpu()
-                mol_keibo_targets = batch.edge_y[edge_mask].cpu()
+                mol_kei_bo_preds = kei_bo_pred[edge_mask].cpu()
+                mol_kei_bo_targets = batch.edge_y[edge_mask].cpu()
                 mol_energy_pred = energy_pred[b].cpu()
                 mol_energy_target = batch.global_y[b].cpu()
                 
@@ -457,12 +457,12 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 mol_data = {
                     'mol_idx': mol_idx,
                     'num_orbitals': mol_orbitals,
-                    'num_interactions': len(mol_keibo_preds),
+                    'num_interactions': len(mol_kei_bo_preds),
                     'orbital_features': mol_x.numpy(),
                     'occupation_preds': mol_occupation_preds.numpy().flatten(),
                     'occupation_targets': mol_occupation_targets.numpy().flatten(),
-                    'keibo_preds': mol_keibo_preds.numpy().flatten(),
-                    'keibo_targets': mol_keibo_targets.numpy().flatten(),
+                    'kei_bo_preds': mol_kei_bo_preds.numpy().flatten(),
+                    'kei_bo_targets': mol_kei_bo_targets.numpy().flatten(),
                     'energy_pred': mol_energy_pred.item(),
                     'energy_target': mol_energy_target.item(),
                     'edge_distances': mol_edge_attr.numpy().flatten(),
@@ -475,8 +475,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
             # Collect overall predictions
             all_occupation_preds.append(occupation_pred.cpu())
             all_occupation_targets.append(batch.y.cpu())
-            all_keibo_preds.append(keibo_pred.cpu())
-            all_keibo_targets.append(batch.edge_y.cpu())
+            all_kei_bo_preds.append(kei_bo_pred.cpu())
+            all_kei_bo_targets.append(batch.edge_y.cpu())
             all_energy_preds.append(energy_pred.cpu())
             all_energy_targets.append(batch.global_y.cpu())
             all_s_preds.append(s_pred.cpu())
@@ -491,8 +491,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
     # Calculate overall metrics
     all_occupation_preds = torch.cat(all_occupation_preds)
     all_occupation_targets = torch.cat(all_occupation_targets)
-    all_keibo_preds = torch.cat(all_keibo_preds)
-    all_keibo_targets = torch.cat(all_keibo_targets)
+    all_kei_bo_preds = torch.cat(all_kei_bo_preds)
+    all_kei_bo_targets = torch.cat(all_kei_bo_targets)
     all_energy_preds = torch.cat(all_energy_preds)
     all_energy_targets = torch.cat(all_energy_targets)
     all_s_preds = torch.cat(all_s_preds)
@@ -505,7 +505,7 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
     all_f_targets = torch.cat(all_f_targets)
     
     occupation_metrics = compute_metrics(all_occupation_preds, all_occupation_targets)
-    keibo_metrics = compute_metrics(all_keibo_preds, all_keibo_targets)
+    kei_bo_metrics = compute_metrics(all_kei_bo_preds, all_kei_bo_targets)
     energy_metrics = compute_metrics(all_energy_preds, all_energy_targets)
     s_metrics = compute_metrics(all_s_preds, all_s_targets)
     p_metrics = compute_metrics(all_p_preds, all_p_targets)
@@ -546,8 +546,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
     report.append(f"  MSE: {occupation_metrics['mse']:.6f}")
     report.append(f"  MAE: {occupation_metrics['mae']:.6f}")
     report.append(f"KEI-BO Interactions:")
-    report.append(f"  MSE: {keibo_metrics['mse']:.6f}")
-    report.append(f"  MAE: {keibo_metrics['mae']:.6f}")
+    report.append(f"  MSE: {kei_bo_metrics['mse']:.6f}")
+    report.append(f"  MAE: {kei_bo_metrics['mae']:.6f}")
     report.append(f"Molecular Energy:")
     report.append(f"  MSE: {energy_metrics['mse']:.6f}")
     report.append(f"  MAE: {energy_metrics['mae']:.6f}")

@@ -36,7 +36,7 @@ class ModelVisualizer:
         # Try both naming conventions for backward compatibility
         if train_losses and 'occupation_loss' in train_losses[0]:
             # Orbital naming convention
-            loss_keys = ['occupation_loss', 'keibo_loss', 'energy_loss']
+            loss_keys = ['occupation_loss', 'kei_bo_loss', 'energy_loss']
         else:
             # Fallback to original naming convention
             loss_keys = ['node_loss', 'edge_loss', 'global_loss']
@@ -63,7 +63,7 @@ class ModelVisualizer:
         # Try both naming conventions for backward compatibility
         if train_metrics and 'occupation' in train_metrics:
             # Orbital naming convention
-            metric_keys = ['occupation', 'keibo', 'energy']
+            metric_keys = ['occupation', 'kei_bo', 'energy']
         else:
             # Fallback to original naming convention
             metric_keys = ['node', 'edge', 'global']
@@ -111,7 +111,7 @@ class ModelVisualizer:
         
         if 'occupation' in train_metrics:
             # Orbital naming convention
-            task_keys = ['occupation', 'keibo', 'energy']
+            task_keys = ['occupation', 'kei_bo', 'energy']
             task_names = ['Occupation MSE (Orbital Occupations)', 'KEI-BO MSE (Orbital Interactions)', 'Energy MSE (MCSCF Energy)']
         else:
             # Fallback to original naming convention

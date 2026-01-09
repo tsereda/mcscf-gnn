@@ -19,7 +19,7 @@ class OrbitalGAMESSTrainer:
                  learning_rate: float,
                  weight_decay: float,
                  occupation_weight: float,
-                 keibo_weight: float, 
+                 kei_bo_weight: float, 
                  energy_weight: float,
                  hybrid_weight: float = 1.0,
                  normalizer: Optional[DataNormalizer] = None,
@@ -46,7 +46,7 @@ class OrbitalGAMESSTrainer:
         num_tasks = 7 if self.include_hybridization else 3
         
         if use_gradnorm:
-            initial_weights = [occupation_weight, keibo_weight, energy_weight]
+            initial_weights = [occupation_weight, kei_bo_weight, energy_weight]
             if self.include_hybridization:
                 initial_weights += [hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
             
@@ -62,7 +62,7 @@ class OrbitalGAMESSTrainer:
             self.loss_fn = OrbitalMultiTaskLoss(
                 use_uncertainty_weighting=use_uncertainty_weighting,
                 occupation_weight=occupation_weight, 
-                keibo_weight=keibo_weight, 
+                kei_bo_weight=kei_bo_weight, 
                 energy_weight=energy_weight,
                 hybrid_weight=hybrid_weight,
                 include_hybridization=self.include_hybridization
@@ -71,7 +71,7 @@ class OrbitalGAMESSTrainer:
             if use_uncertainty_weighting:
                 print(f"Using uncertainty weighting for {num_tasks} tasks (automatic balancing)")
             else:
-                print(f"Using static loss weights (occupation={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight})")
+                print(f"Using static loss weights (occupation={occupation_weight}, kei_bo={kei_bo_weight}, energy={energy_weight}, hybrid={hybrid_weight})")
         
         # Initialize optimizer AFTER loss function so we can include loss parameters
         # Combine model and loss function parameters (now properly on device)
@@ -90,7 +90,7 @@ class OrbitalGAMESSTrainer:
         self.weight_decay = weight_decay
         self.normalizer = normalizer
         
-        self.task_types = ['occupation', 'keibo', 'energy', 's_percent', 'p_percent', 'd_percent', 'f_percent']
+        self.task_types = ['occupation', 'kei_bo', 'energy', 's_percent', 'p_percent', 'd_percent', 'f_percent']
         self.train_losses, self.val_losses = [], []
         self.train_metrics = {task: [] for task in self.task_types}
         self.val_metrics = {task: [] for task in self.task_types}
@@ -113,7 +113,7 @@ class OrbitalGAMESSTrainer:
                 data = data.to(self.device)
                 
                 # Store original targets for metrics computation (before normalization)
-                # 7 targets: occupation, keibo, energy, s%, p%, d%, f%
+                # 7 targets: occupation, kei_bo, energy, s%, p%, d%, f%
                 original_targets = [
                     data.y.clone(), 
                     data.edge_y.clone(), 
@@ -134,7 +134,7 @@ class OrbitalGAMESSTrainer:
                 # Forward pass: returns 7 predictions
                 preds = self.model(data)
                 
-                # Prepare targets: occupation, keibo, energy, s%, p%, d%, f%
+                # Prepare targets: occupation, kei_bo, energy, s%, p%, d%, f%
                 targs = [
                     data.y, 
                     data.edge_y, 
@@ -147,7 +147,7 @@ class OrbitalGAMESSTrainer:
                 
                 # Compute loss based on whether GradNorm is enabled
                 if self.use_gradnorm and is_training:
-                    # GradNorm only handles 3 tasks: occupation, keibo, energy
+                    # GradNorm only handles 3 tasks: occupation, kei_bo, energy
                     # Pass only first 3 predictions and first 3 targets
                     model_params = list(self.model.parameters())
                     total_loss, loss_dict = self.loss_fn(
@@ -228,14 +228,14 @@ class OrbitalGAMESSTrainer:
                     'train_loss': train_results['losses']['total_loss'],
                     'val_loss': val_results['losses']['total_loss'],
                     'train_occupation_mse': train_results['occupation_metrics']['mse'],
-                    'train_keibo_mse': train_results['keibo_metrics']['mse'],
+                    'train_kei_bo_mse': train_results['kei_bo_metrics']['mse'],
                     'train_energy_mse': train_results['energy_metrics']['mse'],
                     'train_s_percent_mse': train_results['s_percent_metrics']['mse'],
                     'train_p_percent_mse': train_results['p_percent_metrics']['mse'],
                     'train_d_percent_mse': train_results['d_percent_metrics']['mse'],
                     'train_f_percent_mse': train_results['f_percent_metrics']['mse'],
                     'val_occupation_mse': val_results['occupation_metrics']['mse'],
-                    'val_keibo_mse': val_results['keibo_metrics']['mse'],
+                    'val_kei_bo_mse': val_results['kei_bo_metrics']['mse'],
                     'val_energy_mse': val_results['energy_metrics']['mse'],
                     'val_s_percent_mse': val_results['s_percent_metrics']['mse'],
                     'val_p_percent_mse': val_results['p_percent_metrics']['mse'],
@@ -247,7 +247,7 @@ class OrbitalGAMESSTrainer:
                 if 'occupation_weight' in train_results['losses']:
                     weight_log_dict = {
                         'occupation_weight': train_results['losses']['occupation_weight'],
-                        'keibo_weight': train_results['losses']['keibo_weight'],
+                        'kei_bo_weight': train_results['losses']['kei_bo_weight'],
                         'energy_weight': train_results['losses']['energy_weight'],
                     }
                     # Add hybridization weights only if they exist
@@ -277,7 +277,7 @@ class OrbitalGAMESSTrainer:
         # Extract task weights if available
         weights_str = ""
         if 'occupation_weight' in losses:
-            weights_str = f" w=[{losses['occupation_weight']:.2f},{losses['keibo_weight']:.2f},{losses['energy_weight']:.2f}]"
+            weights_str = f" w=[{losses['occupation_weight']:.2f},{losses['kei_bo_weight']:.2f},{losses['energy_weight']:.2f}]"
         
         # Main progress line
         print(f"\nEpoch {epoch:3d}/{total} | "
@@ -286,8 +286,8 @@ class OrbitalGAMESSTrainer:
         # Detailed metrics line - now showing individual loss components and MSE
         print(f"  Occ: L={losses['occupation_loss']:.4f}/{val_losses['occupation_loss']:.4f} "
               f"MSE={train_results['occupation_metrics']['mse']:.6f}/{val_results['occupation_metrics']['mse']:.6f} | "
-              f"KEI: L={losses['keibo_loss']:.4f}/{val_losses['keibo_loss']:.4f} "
-              f"MSE={train_results['keibo_metrics']['mse']:.6f}/{val_results['keibo_metrics']['mse']:.6f} | "
+              f"KEI: L={losses['kei_bo_loss']:.4f}/{val_losses['kei_bo_loss']:.4f} "
+              f"MSE={train_results['kei_bo_metrics']['mse']:.6f}/{val_results['kei_bo_metrics']['mse']:.6f} | "
               f"Eng: L={losses['energy_loss']:.4f}/{val_losses['energy_loss']:.4f} "
               f"MSE={train_results['energy_metrics']['mse']:.1f}/{val_results['energy_metrics']['mse']:.1f}")
         

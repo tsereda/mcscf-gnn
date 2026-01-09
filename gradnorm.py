@@ -61,7 +61,7 @@ class GradNormLoss(nn.Module):
         Used to normalize loss ratios.
         
         Args:
-            losses: List of initial losses [occupation_loss, keibo_loss, energy_loss]
+            losses: List of initial losses [occupation_loss, kei_bo_loss, energy_loss]
         """
         self.initial_losses = torch.tensor(losses, dtype=torch.float32)
         self.initial_loss_set = True
@@ -109,10 +109,10 @@ class GradNormLoss(nn.Module):
     
     def forward(self, 
                 occupation_pred: torch.Tensor, 
-                keibo_pred: torch.Tensor, 
+                kei_bo_pred: torch.Tensor, 
                 energy_pred: torch.Tensor,
                 occupation_target: torch.Tensor, 
-                keibo_target: torch.Tensor, 
+                kei_bo_target: torch.Tensor, 
                 energy_target: torch.Tensor,
                 model_parameters = None,
                 update_weights: bool = True) -> Tuple[torch.Tensor, Dict]:
@@ -120,8 +120,8 @@ class GradNormLoss(nn.Module):
         Compute weighted multi-task loss with GradNorm balancing.
         
         Args:
-            occupation_pred, keibo_pred, energy_pred: Model predictions
-            occupation_target, keibo_target, energy_target: Ground truth targets
+            occupation_pred, kei_bo_pred, energy_pred: Model predictions
+            occupation_target, kei_bo_target, energy_target: Ground truth targets
             model_parameters: Model parameters (needed for gradient computation)
             update_weights: Whether to update task weights (set False during validation)
             
@@ -131,10 +131,10 @@ class GradNormLoss(nn.Module):
         """
         # Compute individual task losses
         occupation_loss = self.mse(occupation_pred, occupation_target)
-        keibo_loss = self.mse(keibo_pred, keibo_target)
+        kei_bo_loss = self.mse(kei_bo_pred, kei_bo_target)
         energy_loss = self.mse(energy_pred, energy_target)
         
-        losses = [occupation_loss, keibo_loss, energy_loss]
+        losses = [occupation_loss, kei_bo_loss, energy_loss]
         
         # Set initial losses on first call
         if not self.initial_loss_set:
@@ -161,10 +161,10 @@ class GradNormLoss(nn.Module):
         loss_dict = {
             'total_loss': total_loss.item(),
             'occupation_loss': occupation_loss.item(),
-            'keibo_loss': keibo_loss.item(),
+            'kei_bo_loss': kei_bo_loss.item(),
             'energy_loss': energy_loss.item(),
             'occupation_weight': weights[0].item(),
-            'keibo_weight': weights[1].item(),
+            'kei_bo_weight': weights[1].item(),
             'energy_weight': weights[2].item()
         }
         

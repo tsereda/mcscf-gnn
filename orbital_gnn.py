@@ -300,9 +300,9 @@ class OrbitalTripleTaskGNN(nn.Module):
         )
         
         # KEI-BO value prediction head (edge prediction)
-        keibo_input_dim = hidden_dim * 2 + effective_edge_dim
-        self.keibo_head = nn.Sequential(
-            nn.Linear(keibo_input_dim, hidden_dim),
+        kei_bo_input_dim = hidden_dim * 2 + effective_edge_dim
+        self.kei_bo_head = nn.Sequential(
+            nn.Linear(kei_bo_input_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -311,16 +311,15 @@ class OrbitalTripleTaskGNN(nn.Module):
             nn.Linear(hidden_dim // 2, 1)
         )
         
-        # Hybridization prediction head (unified with softmax constraint)
-        # Predicts s%, p%, d%, f% simultaneously and applies softmax to ensure they sum to 1
-        # This enforces physical constraint that total orbital character = 100%
+        # Hybridization prediction head (unified with softmax to ensure s+p+d+f=1)
+        # This enforces the physical constraint that percentages must sum to 100%
         self.hybridization_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 4)  # Output 4 values for s, p, d, f
-            # Softmax applied in forward() to ensure sum = 1
+            nn.Linear(hidden_dim // 2, 4)  # Output 4 logits for s, p, d, f
         )
+        # Softmax applied in forward pass to ensure s% + p% + d% + f% = 1.0
         
         # Global energy prediction
         if global_pooling_method == 'attention':
@@ -384,7 +383,7 @@ class OrbitalTripleTaskGNN(nn.Module):
         Returns:
             Tuple of predictions:
             - occupation_pred: [num_orbitals] predicted orbital occupations
-            - keibo_pred: [num_edges] predicted KEI-BO values
+            - kei_bo_pred: [num_edges] predicted KEI-BO values
             - energy_pred: [num_molecules] predicted molecular energies
             - s_percent_pred: [num_orbitals] predicted s character %
             - p_percent_pred: [num_orbitals] predicted p character %
@@ -411,15 +410,12 @@ class OrbitalTripleTaskGNN(nn.Module):
         # Predict orbital occupations
         occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
-        # Predict hybridization percentages with softmax constraint (conditionally)
+        # Predict hybridization percentages (conditionally)
         if self.include_hybridization:
-            # Shape: [num_orbitals, 4] -> softmax -> [num_orbitals, 4] where each row sums to 1
-            hybridization_logits = self.hybridization_head(orbital_embeddings)  # [num_orbitals, 4]
-            hybridization_probs = torch.softmax(hybridization_logits, dim=-1)  # Ensure sum to 1
-            s_percent_pred = hybridization_probs[:, 0]  # s character
-            p_percent_pred = hybridization_probs[:, 1]  # p character
-            d_percent_pred = hybridization_probs[:, 2]  # d character
-            f_percent_pred = hybridization_probs[:, 3]  # f character
+            s_percent_pred = self.s_percent_head(orbital_embeddings).squeeze(-1)
+            p_percent_pred = self.p_percent_head(orbital_embeddings).squeeze(-1)
+            d_percent_pred = self.d_percent_head(orbital_embeddings).squeeze(-1)
+            f_percent_pred = self.f_percent_head(orbital_embeddings).squeeze(-1)
         else:
             # Return dummy predictions if not included
             s_percent_pred = torch.zeros_like(occupation_pred)
@@ -428,7 +424,7 @@ class OrbitalTripleTaskGNN(nn.Module):
             f_percent_pred = torch.zeros_like(occupation_pred)
         
         # Predict KEI-BO values (edge predictions)
-        keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
+        kei_bo_pred = self._predict_kei_bo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
         
         # Predict global energy with element baselines
         if batch is None:
@@ -451,11 +447,11 @@ class OrbitalTripleTaskGNN(nn.Module):
         else:
             energy_pred = interaction_energy
         
-        return occupation_pred, keibo_pred, energy_pred, s_percent_pred, p_percent_pred, d_percent_pred, f_percent_pred
+        return occupation_pred, kei_bo_pred, energy_pred, s_percent_pred, p_percent_pred, d_percent_pred, f_percent_pred
     
-    def _predict_keibo_values(self, orbital_embeddings: torch.Tensor, 
-                             edge_index: torch.Tensor, 
-                             edge_attr: torch.Tensor) -> torch.Tensor:
+    def _predict_kei_bo_values(self, orbital_embeddings: torch.Tensor, 
+                               edge_index: torch.Tensor, 
+                               edge_attr: torch.Tensor) -> torch.Tensor:
         """
         Predict KEI-BO values for orbital pairs
         
@@ -465,7 +461,7 @@ class OrbitalTripleTaskGNN(nn.Module):
             edge_attr: [num_edges, edge_input_dim]
         
         Returns:
-            keibo_pred: [num_edges, 1]
+            kei_bo_pred: [num_edges, 1]
         """
         row, col = edge_index
         source_orbitals = orbital_embeddings[row]
@@ -475,9 +471,9 @@ class OrbitalTripleTaskGNN(nn.Module):
         edge_features = torch.cat([source_orbitals, target_orbitals, edge_attr], dim=1)
         
         # Predict KEI-BO value
-        keibo_pred = self.keibo_head(edge_features)
+        kei_bo_pred = self.kei_bo_head(edge_features)
         
-        return keibo_pred
+        return kei_bo_pred
     
     def predict(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Inference mode prediction"""
@@ -499,7 +495,7 @@ class OrbitalMultiTaskLoss(nn.Module):
     def __init__(self, 
                  use_uncertainty_weighting: bool = True,
                  occupation_weight: float = 1.0, 
-                 keibo_weight: float = 1.0, 
+                 kei_bo_weight: float = 1.0, 
                  energy_weight: float = 1.0,
                  hybrid_weight: float = 1.0,
                  include_hybridization: bool = True):
@@ -515,7 +511,7 @@ class OrbitalMultiTaskLoss(nn.Module):
             # Learnable log variance parameters for each task
             # Using log variance for numerical stability
             self.log_var_occupation = nn.Parameter(torch.zeros(1))
-            self.log_var_keibo = nn.Parameter(torch.zeros(1))
+            self.log_var_kei_bo = nn.Parameter(torch.zeros(1))
             self.log_var_energy = nn.Parameter(torch.zeros(1))
             if include_hybridization:
                 self.log_var_s_percent = nn.Parameter(torch.zeros(1))
@@ -526,24 +522,24 @@ class OrbitalMultiTaskLoss(nn.Module):
         else:
             # Manual weights (backward compatibility)
             self.occupation_weight = occupation_weight
-            self.keibo_weight = keibo_weight
+            self.kei_bo_weight = kei_bo_weight
             self.energy_weight = energy_weight
             self.hybrid_weight = hybrid_weight  # Same weight for all 4 hybridization tasks
             if include_hybridization:
-                print(f"Using manual weights: occ={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}, hybrid={hybrid_weight}")
+                print(f"Using manual weights: occ={occupation_weight}, kei_bo={kei_bo_weight}, energy={energy_weight}, hybrid={hybrid_weight}")
             else:
-                print(f"Using manual weights (no hybridization): occ={occupation_weight}, keibo={keibo_weight}, energy={energy_weight}")
+                print(f"Using manual weights (no hybridization): occ={occupation_weight}, kei_bo={kei_bo_weight}, energy={energy_weight}")
     
     def forward(self, 
                 occupation_pred: torch.Tensor, 
-                keibo_pred: torch.Tensor, 
+                kei_bo_pred: torch.Tensor, 
                 energy_pred: torch.Tensor,
                 s_percent_pred: torch.Tensor,
                 p_percent_pred: torch.Tensor,
                 d_percent_pred: torch.Tensor,
                 f_percent_pred: torch.Tensor,
                 occupation_target: torch.Tensor, 
-                keibo_target: torch.Tensor, 
+                kei_bo_target: torch.Tensor, 
                 energy_target: torch.Tensor,
                 s_percent_target: torch.Tensor,
                 p_percent_target: torch.Tensor,
@@ -552,7 +548,7 @@ class OrbitalMultiTaskLoss(nn.Module):
         
         # Ensure targets have same shape as predictions (flatten if needed)
         occupation_target = occupation_target.squeeze() if occupation_target.dim() > 1 else occupation_target
-        keibo_target = keibo_target.squeeze() if keibo_target.dim() > 1 else keibo_target
+        kei_bo_target = kei_bo_target.squeeze() if kei_bo_target.dim() > 1 else kei_bo_target
         energy_target = energy_target.squeeze() if energy_target.dim() > 1 else energy_target
         s_percent_target = s_percent_target.squeeze() if s_percent_target.dim() > 1 else s_percent_target
         p_percent_target = p_percent_target.squeeze() if p_percent_target.dim() > 1 else p_percent_target
@@ -561,7 +557,7 @@ class OrbitalMultiTaskLoss(nn.Module):
         
         # Compute individual task losses
         occupation_loss = self.mse(occupation_pred, occupation_target)
-        keibo_loss = self.mse(keibo_pred, keibo_target)
+        kei_bo_loss = self.mse(kei_bo_pred, kei_bo_target)
         energy_loss = self.mse(energy_pred, energy_target)
         
         if self.include_hybridization:
@@ -574,14 +570,14 @@ class OrbitalMultiTaskLoss(nn.Module):
             # Ensure all losses are on the same device as the parameters
             device = self.log_var_occupation.device
             occupation_loss = occupation_loss.to(device)
-            keibo_loss = keibo_loss.to(device)
+            kei_bo_loss = kei_bo_loss.to(device)
             energy_loss = energy_loss.to(device)
             
             # Uncertainty-weighted loss: L = (1/2σ²) * loss + log(σ)
             # Equivalent to: L = exp(-log_var) * loss + log_var
             total_loss = (
                 torch.exp(-self.log_var_occupation) * occupation_loss + self.log_var_occupation +
-                torch.exp(-self.log_var_keibo) * keibo_loss + self.log_var_keibo +
+                torch.exp(-self.log_var_kei_bo) * kei_bo_loss + self.log_var_kei_bo +
                 torch.exp(-self.log_var_energy) * energy_loss + self.log_var_energy
             )
             
@@ -599,7 +595,7 @@ class OrbitalMultiTaskLoss(nn.Module):
             
             # Extract learned weights for logging
             occupation_weight = torch.exp(-self.log_var_occupation).item()
-            keibo_weight = torch.exp(-self.log_var_keibo).item()
+            kei_bo_weight = torch.exp(-self.log_var_kei_bo).item()
             energy_weight = torch.exp(-self.log_var_energy).item()
             if self.include_hybridization:
                 s_weight = torch.exp(-self.log_var_s_percent).item()
@@ -612,7 +608,7 @@ class OrbitalMultiTaskLoss(nn.Module):
             # Manual weighting
             total_loss = (
                 self.occupation_weight * occupation_loss + 
-                self.keibo_weight * keibo_loss + 
+                self.kei_bo_weight * kei_bo_loss + 
                 self.energy_weight * energy_loss
             )
             
@@ -620,7 +616,7 @@ class OrbitalMultiTaskLoss(nn.Module):
                 total_loss += self.hybrid_weight * (s_percent_loss + p_percent_loss + d_percent_loss + f_percent_loss)
             
             occupation_weight = self.occupation_weight
-            keibo_weight = self.keibo_weight
+            kei_bo_weight = self.kei_bo_weight
             energy_weight = self.energy_weight
             if self.include_hybridization:
                 s_weight = p_weight = d_weight = f_weight = self.hybrid_weight
@@ -630,10 +626,10 @@ class OrbitalMultiTaskLoss(nn.Module):
         loss_dict = {
             'total_loss': total_loss.item(),
             'occupation_loss': occupation_loss.item(),
-            'keibo_loss': keibo_loss.item(),
+            'kei_bo_loss': kei_bo_loss.item(),
             'energy_loss': energy_loss.item(),
             'occupation_weight': occupation_weight,
-            'keibo_weight': keibo_weight,
+            'kei_bo_weight': kei_bo_weight,
             'energy_weight': energy_weight,
         }
         

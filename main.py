@@ -205,6 +205,13 @@ def main():
             True  # Default to True for backward compatibility
         )
         
+        # Element baselines parameter (physics-informed inductive bias)
+        config['model']['use_element_baselines'] = getattr(
+            wandb.config,
+            'use_element_baselines',
+            True  # Default to True for physics-informed learning
+        )
+        
         # Validation configuration
         config['data']['validation_mode'] = getattr(wandb.config, 'validation_method', 'per_element')
         config['data']['validation_subset'] = getattr(wandb.config, 'validation_subset', None)
@@ -222,6 +229,7 @@ def main():
         print(f"Normalization: {'Global' if wandb.config.normalization_global else 'Per-fold'} (enabled={wandb.config.normalization_enabled})")
         print(f"Loss Balancing Strategy: {strategy}")
         print(f"Include Hybridization: {config['model']['include_hybridization']}")
+        print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.keibo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
         print(f"Num Layers: {config['model']['num_layers']}")
@@ -429,7 +437,8 @@ def main():
                 use_rbf_distance=config['model']['use_rbf_distance'],
                 num_rbf=config['model']['num_rbf'],
                 rbf_cutoff=config['model']['rbf_cutoff'],
-                include_hybridization=config['model']['include_hybridization']
+                include_hybridization=config['model']['include_hybridization'],
+                use_element_baselines=config['model'].get('use_element_baselines', True)
             )
             
             # Create trainer

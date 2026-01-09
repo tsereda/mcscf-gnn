@@ -36,6 +36,9 @@ parameters:
   include_hybridization:
     values: [true, false]
 
+  use_element_baselines:
+    values: [true, false]
+
   occupation_weight:
     values: [1, 2]
 

@@ -244,7 +244,8 @@ class OrbitalTripleTaskGNN(nn.Module):
                  use_rbf_distance: bool = False,
                  num_rbf: int = 50,
                  rbf_cutoff: float = 5.0,
-                 include_hybridization: bool = True):
+                 include_hybridization: bool = True,
+                 use_element_baselines: bool = True):
         super(OrbitalTripleTaskGNN, self).__init__()
         
         self.hidden_dim = hidden_dim
@@ -252,6 +253,18 @@ class OrbitalTripleTaskGNN(nn.Module):
         self.global_pooling_method = global_pooling_method
         self.use_rbf_distance = use_rbf_distance
         self.include_hybridization = include_hybridization
+        self.use_element_baselines = use_element_baselines
+        
+        # Per-element energy baselines (physics-informed inductive bias)
+        # Learns characteristic atomic energies (e.g., H ≈ -0.5, C ≈ -37.8 hartrees)
+        if use_element_baselines:
+            self.element_energy_baseline = nn.Parameter(
+                torch.zeros(max_atomic_num + 1)  # +1 to handle 0-indexing safely
+            )
+            print("✓ Using per-element energy baselines (physics-informed)")
+        else:
+            self.element_energy_baseline = None
+            print("✗ NOT using element baselines (may struggle with size-extensivity)")
         
         # RBF distance encoding (optional)
         if use_rbf_distance:
@@ -354,6 +367,35 @@ class OrbitalTripleTaskGNN(nn.Module):
         else:
             raise ValueError(f"Invalid global_pooling_method: {global_pooling_method}")
     
+    def _compute_element_baseline(self, data: Data) -> torch.Tensor:
+        """
+        Compute per-molecule element baseline energy.
+        
+        This is the "boring" part of the energy: sum of atomic reference energies.
+        The GNN will learn the "interesting" part: bonding, correlation, geometry effects.
+        
+        Args:
+            data: PyG Data object with orbital features
+            
+        Returns:
+            baseline_per_mol: [num_molecules] element baseline energies
+        """
+        # Extract atomic numbers from orbital features (first column)
+        atomic_numbers = data.x[:, 0].long()  # [num_orbitals]
+        
+        # Look up baseline energy for each atom type
+        # This learns e.g.: H→-0.5, C→-37.8, O→-75.0 hartrees
+        element_energies = self.element_energy_baseline[atomic_numbers]  # [num_orbitals]
+        
+        # Sum per molecule
+        num_molecules = data.batch.max().item() + 1
+        baseline_per_mol = torch.zeros(num_molecules, device=data.x.device)
+        
+        # Scatter-add: sum element energies within each molecule
+        baseline_per_mol.index_add_(0, data.batch, element_energies)
+        
+        return baseline_per_mol
+    
     def forward(self, data: Data) -> Tuple[torch.Tensor, ...]:
         """
         Forward pass for orbital-level predictions
@@ -407,18 +449,26 @@ class OrbitalTripleTaskGNN(nn.Module):
         # Predict KEI-BO values (edge predictions)
         keibo_pred = self._predict_keibo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
         
-        # Predict global energy
+        # Predict global energy with element baselines
         if batch is None:
             batch = torch.zeros(orbital_embeddings.size(0), dtype=torch.long, device=orbital_embeddings.device)
         
+        # Compute interaction energy from GNN (bonding, correlation, etc.)
         if self.global_pooling_method == 'attention':
-            energy_pred = self.global_pooling(orbital_embeddings, batch).squeeze(-1)
+            interaction_energy = self.global_pooling(orbital_embeddings, batch).squeeze(-1)
         elif self.global_pooling_method == 'mean':
             molecule_embedding = global_mean_pool(orbital_embeddings, batch)
-            energy_pred = self.global_pooling(molecule_embedding).squeeze(-1)
+            interaction_energy = self.global_pooling(molecule_embedding).squeeze(-1)
         elif self.global_pooling_method == 'sum':
             molecule_embedding = global_add_pool(orbital_embeddings, batch)
-            energy_pred = self.global_pooling(molecule_embedding).squeeze(-1)
+            interaction_energy = self.global_pooling(molecule_embedding).squeeze(-1)
+        
+        # Add element baseline correction if enabled
+        if self.use_element_baselines:
+            element_baseline = self._compute_element_baseline(data)
+            energy_pred = element_baseline + interaction_energy
+        else:
+            energy_pred = interaction_energy
         
         return occupation_pred, keibo_pred, energy_pred, s_percent_pred, p_percent_pred, d_percent_pred, f_percent_pred
     
@@ -644,7 +694,8 @@ def create_orbital_model(orbital_input_dim: int = 4,
                         use_rbf_distance: bool = False,
                         num_rbf: int = 50,
                         rbf_cutoff: float = 5.0,
-                        include_hybridization: bool = True) -> OrbitalTripleTaskGNN:
+                        include_hybridization: bool = True,
+                        use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
     """Factory function to create the orbital-centric model"""
     return OrbitalTripleTaskGNN(
         orbital_input_dim=orbital_input_dim,
@@ -658,7 +709,8 @@ def create_orbital_model(orbital_input_dim: int = 4,
         use_rbf_distance=use_rbf_distance,
         num_rbf=num_rbf,
         rbf_cutoff=rbf_cutoff,
-        include_hybridization=include_hybridization
+        include_hybridization=include_hybridization,
+        use_element_baselines=use_element_baselines
     )
 
 

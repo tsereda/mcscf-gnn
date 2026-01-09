@@ -169,8 +169,8 @@ class DataNormalizer:
             f_percent_pred: F% predictions (node-level, no normalization needed - already 0-1)
         
         Returns:
-            Tuple of (occupation, keibo, energy, s%, p%, d%, f%)
-            Only occupation, keibo, and energy are denormalized; hybridization % are passed through
+            Tuple of (occupation, kei_bo, energy, s%, p%, d%, f%)
+            Only occupation, kei_bo, and energy are denormalized; hybridization % are passed through
         """
         return (
             self.denormalize_value(occupation_pred, 'node'),

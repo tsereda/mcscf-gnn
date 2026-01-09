@@ -22,7 +22,7 @@ class GradNormLoss(nn.Module):
                  initial_weights: Optional[List[float]] = None):
         """
         Args:
-            num_tasks: Number of tasks (3 for our case: occupation, keibo, energy)
+            num_tasks: Number of tasks (3 for our case: occupation, kei_bo, energy)
             alpha: Restoring force hyperparameter (controls how aggressively to balance)
                    - alpha = 0: No balancing (static weights)
                    - alpha = 1.5: Recommended default value

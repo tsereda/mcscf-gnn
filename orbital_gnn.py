@@ -509,7 +509,6 @@ class OrbitalMultiTaskLoss(nn.Module):
         self.use_uncertainty_weighting = use_uncertainty_weighting
         self.include_hybridization = include_hybridization
         self.mse = nn.MSELoss()
-        self.kl_div = nn.KLDivLoss(reduction='batchmean')  # For probability distributions
         
         num_tasks = 7 if include_hybridization else 3
         
@@ -565,19 +564,15 @@ class OrbitalMultiTaskLoss(nn.Module):
         energy_loss = self.mse(energy_pred, energy_target)
         
         if self.include_hybridization:
-            # Use KL divergence for probability distributions instead of MSE
+            # Use MSE for hybridization (proven to work in MID sweep: MSE=0.31)
             # Stack into distributions [N_orbitals, 4]
             pred_hybrid = torch.stack([s_percent_pred, p_percent_pred, 
                                       d_percent_pred, f_percent_pred], dim=-1)
             target_hybrid = torch.stack([s_percent_target, p_percent_target, 
                                         d_percent_target, f_percent_target], dim=-1)
             
-            # KL divergence: D_KL(target || pred)
-            # Input must be log-probabilities, target must be probabilities
-            hybrid_loss = self.kl_div(
-                torch.nn.functional.log_softmax(pred_hybrid, dim=-1),
-                target_hybrid
-            )
+            # MSE on probability vectors - simple and effective for one-hot targets
+            hybrid_loss = self.mse(pred_hybrid, target_hybrid)
         
         if self.use_uncertainty_weighting:
             # Ensure all losses are on the same device as the parameters

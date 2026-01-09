@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-10
+  name: mcscf-gnn-12
 spec:
   backoffLimit: 0
   template:

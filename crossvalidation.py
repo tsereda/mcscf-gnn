@@ -753,10 +753,10 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
     
     metrics_names = {
         'val_occupation_mse': 'Val Occupation MSE',
-        'val_keibo_mse': 'Val KEI-BO MSE',
+        'val_kei_bo_mse': 'Val KEI-BO MSE',
         'val_energy_mse': 'Val Energy MSE',
         'train_occupation_mse': 'Train Occupation MSE',
-        'train_keibo_mse': 'Train KEI-BO MSE',
+        'train_kei_bo_mse': 'Train KEI-BO MSE',
         'train_energy_mse': 'Train Energy MSE',
     }
     

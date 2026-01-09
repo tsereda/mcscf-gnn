@@ -597,22 +597,22 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
             report.append("Inter   Orbitals   Distance   Predicted    Target      AbsError")
             report.append("-" * 65)
             
-            keibo_abs_errors = np.abs(mol['keibo_preds'] - mol['keibo_targets'])
+            kei_bo_abs_errors = np.abs(mol['kei_bo_preds'] - mol['kei_bo_targets'])
             edge_index = mol['edge_index']
             
             for i in range(mol['num_interactions']):
                 orb1 = int(edge_index[0, i]) + 1  # Convert to 1-indexed
                 orb2 = int(edge_index[1, i]) + 1
                 distance = mol['edge_distances'][i]
-                predicted = mol['keibo_preds'][i]
-                target = mol['keibo_targets'][i]
-                abs_error = keibo_abs_errors[i]
+                predicted = mol['kei_bo_preds'][i]
+                target = mol['kei_bo_targets'][i]
+                abs_error = kei_bo_abs_errors[i]
                 
                 report.append(f"{i+1:5d} {orb1:3d}-{orb2:<3d} {distance:9.3f} "
                              f"{predicted:10.6f} {target:10.6f} {abs_error:10.6f}")
             
-            keibo_mae = np.mean(keibo_abs_errors)
-            report.append(f"KEI-BO MAE: {keibo_mae:.6f}")
+            kei_bo_mae = np.mean(kei_bo_abs_errors)
+            report.append(f"KEI-BO MAE: {kei_bo_mae:.6f}")
         else:
             report.append("No KEI-BO interactions found for this molecule.")
         
@@ -660,10 +660,10 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
     
     # Calculate summary statistics across all folds - Updated for orbital naming
     val_occupation_mse = [to_python_float(r['val_metrics']['occupation'][-1]['mse']) for r in all_results]
-    val_keibo_mse = [to_python_float(r['val_metrics']['keibo'][-1]['mse']) for r in all_results]
+    val_kei_bo_mse = [to_python_float(r['val_metrics']['kei_bo'][-1]['mse']) for r in all_results]
     val_energy_mse = [to_python_float(r['val_metrics']['energy'][-1]['mse']) for r in all_results]
     train_occupation_mse = [to_python_float(r['train_metrics']['occupation'][-1]['mse']) for r in all_results]
-    train_keibo_mse = [to_python_float(r['train_metrics']['keibo'][-1]['mse']) for r in all_results]
+    train_kei_bo_mse = [to_python_float(r['train_metrics']['kei_bo'][-1]['mse']) for r in all_results]
     train_energy_mse = [to_python_float(r['train_metrics']['energy'][-1]['mse']) for r in all_results]
     
     combined_results['summary_statistics'] = {
@@ -674,12 +674,12 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
             'max': float(np.max(val_occupation_mse)),
             'values': val_occupation_mse
         },
-        'val_keibo_mse': {
-            'mean': float(np.mean(val_keibo_mse)),
-            'std': float(np.std(val_keibo_mse)),
-            'min': float(np.min(val_keibo_mse)),
-            'max': float(np.max(val_keibo_mse)),
-            'values': val_keibo_mse
+        'val_kei_bo_mse': {
+            'mean': float(np.mean(val_kei_bo_mse)),
+            'std': float(np.std(val_kei_bo_mse)),
+            'min': float(np.min(val_kei_bo_mse)),
+            'max': float(np.max(val_kei_bo_mse)),
+            'values': val_kei_bo_mse
         },
         'val_energy_mse': {
             'mean': float(np.mean(val_energy_mse)),
@@ -695,12 +695,12 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
             'max': float(np.max(train_occupation_mse)),
             'values': train_occupation_mse
         },
-        'train_keibo_mse': {
-            'mean': float(np.mean(train_keibo_mse)),
-            'std': float(np.std(train_keibo_mse)),
-            'min': float(np.min(train_keibo_mse)),
-            'max': float(np.max(train_keibo_mse)),
-            'values': train_keibo_mse
+        'train_kei_bo_mse': {
+            'mean': float(np.mean(train_kei_bo_mse)),
+            'std': float(np.std(train_kei_bo_mse)),
+            'min': float(np.min(train_kei_bo_mse)),
+            'max': float(np.max(train_kei_bo_mse)),
+            'values': train_kei_bo_mse
         },
         'train_energy_mse': {
             'mean': float(np.mean(train_energy_mse)),
@@ -727,10 +727,10 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
                 'train_occupation_mae': to_python_float(results['train_metrics']['occupation'][-1]['mae']),
                 'val_occupation_mse': to_python_float(results['val_metrics']['occupation'][-1]['mse']),
                 'val_occupation_mae': to_python_float(results['val_metrics']['occupation'][-1]['mae']),
-                'train_keibo_mse': to_python_float(results['train_metrics']['keibo'][-1]['mse']),
-                'train_keibo_mae': to_python_float(results['train_metrics']['keibo'][-1]['mae']),
-                'val_keibo_mse': to_python_float(results['val_metrics']['keibo'][-1]['mse']),
-                'val_keibo_mae': to_python_float(results['val_metrics']['keibo'][-1]['mae']),
+                'train_kei_bo_mse': to_python_float(results['train_metrics']['kei_bo'][-1]['mse']),
+                'train_kei_bo_mae': to_python_float(results['train_metrics']['kei_bo'][-1]['mae']),
+                'val_kei_bo_mse': to_python_float(results['val_metrics']['kei_bo'][-1]['mse']),
+                'val_kei_bo_mae': to_python_float(results['val_metrics']['kei_bo'][-1]['mae']),
                 'train_energy_mse': to_python_float(results['train_metrics']['energy'][-1]['mse']),
                 'train_energy_mae': to_python_float(results['train_metrics']['energy'][-1]['mae']),
                 'val_energy_mse': to_python_float(results['val_metrics']['energy'][-1]['mse']),

@@ -509,6 +509,7 @@ class OrbitalMultiTaskLoss(nn.Module):
         self.use_uncertainty_weighting = use_uncertainty_weighting
         self.include_hybridization = include_hybridization
         self.mse = nn.MSELoss()
+        self.kl_div = nn.KLDivLoss(reduction='batchmean')  # For probability distributions
         
         num_tasks = 7 if include_hybridization else 3
         
@@ -519,10 +520,8 @@ class OrbitalMultiTaskLoss(nn.Module):
             self.log_var_kei_bo = nn.Parameter(torch.zeros(1))
             self.log_var_energy = nn.Parameter(torch.zeros(1))
             if include_hybridization:
-                self.log_var_s_percent = nn.Parameter(torch.zeros(1))
-                self.log_var_p_percent = nn.Parameter(torch.zeros(1))
-                self.log_var_d_percent = nn.Parameter(torch.zeros(1))
-                self.log_var_f_percent = nn.Parameter(torch.zeros(1))
+                # Single uncertainty for entire hybridization distribution (respects s+p+d+f=1 constraint)
+                self.log_var_hybrid = nn.Parameter(torch.zeros(1))
             print(f"Using uncertainty weighting for {num_tasks} tasks (automatic balancing)")
         else:
             # Manual weights (backward compatibility)
@@ -566,10 +565,19 @@ class OrbitalMultiTaskLoss(nn.Module):
         energy_loss = self.mse(energy_pred, energy_target)
         
         if self.include_hybridization:
-            s_percent_loss = self.mse(s_percent_pred, s_percent_target)
-            p_percent_loss = self.mse(p_percent_pred, p_percent_target)
-            d_percent_loss = self.mse(d_percent_pred, d_percent_target)
-            f_percent_loss = self.mse(f_percent_pred, f_percent_target)
+            # Use KL divergence for probability distributions instead of MSE
+            # Stack into distributions [N_orbitals, 4]
+            pred_hybrid = torch.stack([s_percent_pred, p_percent_pred, 
+                                      d_percent_pred, f_percent_pred], dim=-1)
+            target_hybrid = torch.stack([s_percent_target, p_percent_target, 
+                                        d_percent_target, f_percent_target], dim=-1)
+            
+            # KL divergence: D_KL(target || pred)
+            # Input must be log-probabilities, target must be probabilities
+            hybrid_loss = self.kl_div(
+                torch.nn.functional.log_softmax(pred_hybrid, dim=-1),
+                target_hybrid
+            )
         
         if self.use_uncertainty_weighting:
             # Ensure all losses are on the same device as the parameters
@@ -587,30 +595,18 @@ class OrbitalMultiTaskLoss(nn.Module):
             )
             
             if self.include_hybridization:
-                s_percent_loss = s_percent_loss.to(device)
-                p_percent_loss = p_percent_loss.to(device)
-                d_percent_loss = d_percent_loss.to(device)
-                f_percent_loss = f_percent_loss.to(device)
-                total_loss += (
-                    torch.exp(-self.log_var_s_percent) * s_percent_loss + self.log_var_s_percent +
-                    torch.exp(-self.log_var_p_percent) * p_percent_loss + self.log_var_p_percent +
-                    torch.exp(-self.log_var_d_percent) * d_percent_loss + self.log_var_d_percent +
-                    torch.exp(-self.log_var_f_percent) * f_percent_loss + self.log_var_f_percent
-                )
+                hybrid_loss = hybrid_loss.to(device)
+                # Single uncertainty for entire hybridization distribution
+                total_loss += torch.exp(-self.log_var_hybrid) * hybrid_loss + self.log_var_hybrid
             
             # Extract learned weights for logging
             occupation_weight = torch.exp(-self.log_var_occupation).item()
             kei_bo_weight = torch.exp(-self.log_var_kei_bo).item()
             energy_weight = torch.exp(-self.log_var_energy).item()
             if self.include_hybridization:
-                s_weight = torch.exp(-self.log_var_s_percent).item()
-                p_weight = torch.exp(-self.log_var_p_percent).item()
-                d_weight = torch.exp(-self.log_var_d_percent).item()
-                f_weight = torch.exp(-self.log_var_f_percent).item()
-            else:
-                s_weight = p_weight = d_weight = f_weight = 0.0
+                hybrid_weight = torch.exp(-self.log_var_hybrid).item()
         else:
-            # Manual weighting
+            # Manual weighting (static)
             total_loss = (
                 self.occupation_weight * occupation_loss + 
                 self.kei_bo_weight * kei_bo_loss + 
@@ -618,13 +614,13 @@ class OrbitalMultiTaskLoss(nn.Module):
             )
             
             if self.include_hybridization:
-                total_loss += self.hybrid_weight * (s_percent_loss + p_percent_loss + d_percent_loss + f_percent_loss)
+                total_loss += self.hybrid_weight * hybrid_loss
             
             occupation_weight = self.occupation_weight
             kei_bo_weight = self.kei_bo_weight
             energy_weight = self.energy_weight
             if self.include_hybridization:
-                s_weight = p_weight = d_weight = f_weight = self.hybrid_weight
+                hybrid_weight = self.hybrid_weight
             else:
                 s_weight = p_weight = d_weight = f_weight = 0.0
         
@@ -640,14 +636,8 @@ class OrbitalMultiTaskLoss(nn.Module):
         
         if self.include_hybridization:
             loss_dict.update({
-                's_percent_loss': s_percent_loss.item(),
-                'p_percent_loss': p_percent_loss.item(),
-                'd_percent_loss': d_percent_loss.item(),
-                'f_percent_loss': f_percent_loss.item(),
-                's_weight': s_weight,
-                'p_weight': p_weight,
-                'd_weight': d_weight,
-                'f_weight': f_weight
+                'hybrid_loss': hybrid_loss.item(),
+                'hybrid_weight': hybrid_weight
             })
         
         return total_loss, loss_dict

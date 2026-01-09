@@ -455,6 +455,7 @@ def main():
                 use_gradnorm=config['gradnorm']['enabled'],
                 gradnorm_alpha=config['gradnorm']['alpha'],
                 gradnorm_lr=config['gradnorm']['learning_rate'],
+                use_first_epoch_weighting=config.get('use_first_epoch_weighting', False),
                 wandb_enabled=is_sweep
             )
             

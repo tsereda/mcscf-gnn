@@ -27,6 +27,7 @@ class OrbitalGAMESSTrainer:
                  use_gradnorm: bool = False,
                  gradnorm_alpha: float = 1.5,
                  gradnorm_lr: float = 0.025,
+                 use_first_epoch_weighting: bool = False,
                  wandb_enabled: bool = False,
                  device: str = None):
         
@@ -34,6 +35,8 @@ class OrbitalGAMESSTrainer:
         self.model = model.to(self.device)
         self.wandb_enabled = wandb_enabled
         self.use_uncertainty_weighting = use_uncertainty_weighting
+        self.use_first_epoch_weighting = use_first_epoch_weighting
+        self.first_epoch_complete = False
         self.include_hybridization = model.include_hybridization
         
         # Choose loss function based on settings
@@ -213,6 +216,28 @@ class OrbitalGAMESSTrainer:
         for epoch in range(num_epochs):
             train_results = self.train_epoch(train_loader)
             val_results = self.validate(val_loader)
+            
+            # Implement first-epoch weighting after first epoch completes
+            if self.use_first_epoch_weighting and epoch == 0 and not self.first_epoch_complete:
+                train_losses = train_results['losses']
+                
+                # Compute inverse-loss weights normalized to sum to 3
+                inv_occ = 1.0 / (train_losses['occupation_loss'] + 1e-8)
+                inv_kei = 1.0 / (train_losses['kei_bo_loss'] + 1e-8)
+                inv_eng = 1.0 / (train_losses['energy_loss'] + 1e-8)
+                total_inv = inv_occ + inv_kei + inv_eng
+                
+                # Set static weights (higher loss → lower weight)
+                self.loss_fn.occupation_weight = (inv_occ / total_inv) * 3
+                self.loss_fn.kei_bo_weight = (inv_kei / total_inv) * 3
+                self.loss_fn.energy_weight = (inv_eng / total_inv) * 3
+                
+                self.first_epoch_complete = True
+                
+                print(f"\n[First-Epoch Weighting] Set static weights based on epoch 0 losses:")
+                print(f"  Occupation: {self.loss_fn.occupation_weight:.4f} (loss: {train_losses['occupation_loss']:.4f})")
+                print(f"  KEI-BO: {self.loss_fn.kei_bo_weight:.4f} (loss: {train_losses['kei_bo_loss']:.4f})")
+                print(f"  Energy: {self.loss_fn.energy_weight:.4f} (loss: {train_losses['energy_loss']:.4f})\n")
             
             self.train_losses.append(train_results['losses'])
             self.val_losses.append(val_results['losses'])

@@ -3,7 +3,7 @@ method: bayes
 project: gamess-gnn-sweep
 
 metric:
-  name: avg_val_mse
+  name: avg_val_kei_bo_mse
   goal: minimize
 
 parameters:
@@ -12,7 +12,7 @@ parameters:
     values: ['random_split', 'per_molecule', 'per_element']
   
   validation_subset:
-    value: ['H', 'C', 'b2', 'h2o']  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
+    value: ['H', 'C', 'F', 'b2', 'h2o', 'lic']  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
   
   val_split_ratio:
     value: 0.2  # Only used for random_split method
@@ -55,7 +55,7 @@ parameters:
     values: [32, 64, 128]
 
   num_layers:
-    values: [3, 4]
+    values: [3, 5]
 
   epochs:
     values: [200]
@@ -65,10 +65,10 @@ parameters:
     values: [true, false]
   
   num_rbf:
-    value: 50  # Number of Gaussian basis functions (only used if use_rbf_distance=true)
+    values: [30,60]  # Number of Gaussian basis functions (only used if use_rbf_distance=true)
   
   rbf_cutoff:
-    value: 5.0  # Maximum distance for RBF centers in Angstroms
+    value: [3,6]  # Maximum distance for RBF centers in Angstroms
 
 command:
   - ${env}

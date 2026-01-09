@@ -12,7 +12,7 @@ parameters:
     values: ['random_split', 'per_molecule', 'per_element']
   
   validation_subset:
-    value: null  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
+    value: ['H', 'C', 'b2', 'h2o']  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
   
   val_split_ratio:
     value: 0.2  # Only used for random_split method

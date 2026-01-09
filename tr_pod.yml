@@ -60,7 +60,7 @@ spec:
           cd mcscf-gnn
 
           unzip /data1/dec20.zip
-          sudo cp -r for-tim/ data1/
+          sudo cp -r for-tim/ data/
 
           wandb agent timgsereda/gamess-gnn-sweep/58qnbmpt
           

@@ -410,12 +410,17 @@ class OrbitalTripleTaskGNN(nn.Module):
         # Predict orbital occupations
         occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
         
-        # Predict hybridization percentages (conditionally)
+        # Predict hybridization percentages with softmax constraint (conditionally)
         if self.include_hybridization:
-            s_percent_pred = self.s_percent_head(orbital_embeddings).squeeze(-1)
-            p_percent_pred = self.p_percent_head(orbital_embeddings).squeeze(-1)
-            d_percent_pred = self.d_percent_head(orbital_embeddings).squeeze(-1)
-            f_percent_pred = self.f_percent_head(orbital_embeddings).squeeze(-1)
+            # Use unified hybridization head with softmax to enforce s+p+d+f=1
+            hybridization_logits = self.hybridization_head(orbital_embeddings)
+            hybridization_probs = torch.softmax(hybridization_logits, dim=-1)
+            
+            # Extract individual percentages (extract as 1D to match other predictions)
+            s_percent_pred = hybridization_probs[:, 0]
+            p_percent_pred = hybridization_probs[:, 1]
+            d_percent_pred = hybridization_probs[:, 2]
+            f_percent_pred = hybridization_probs[:, 3]
         else:
             # Return dummy predictions if not included
             s_percent_pred = torch.zeros_like(occupation_pred)

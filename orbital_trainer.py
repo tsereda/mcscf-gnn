@@ -139,10 +139,10 @@ class OrbitalGAMESSTrainer:
                     data.y, 
                     data.edge_y, 
                     data.global_y,
-                    data.hybrid_y[:, 0:1],  # s%
-                    data.hybrid_y[:, 1:2],  # p%
-                    data.hybrid_y[:, 2:3],  # d%
-                    data.hybrid_y[:, 3:4]   # f%
+                    data.hybrid_y[:, 0],  # s%
+                    data.hybrid_y[:, 1],  # p%
+                    data.hybrid_y[:, 2],  # d%
+                    data.hybrid_y[:, 3]   # f%
                 ]
                 
                 # Compute loss based on whether GradNorm is enabled

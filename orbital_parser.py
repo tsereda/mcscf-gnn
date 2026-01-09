@@ -290,13 +290,13 @@ class OrbitalGAMESSParser:
         node_features = torch.tensor(orbital_data['orbital_features'], dtype=torch.float)
         
         # Node targets: orbital occupations from density matrix diagonal
-        node_targets = torch.tensor(orbital_data['orbital_occupations'], dtype=torch.float).view(-1, 1)
+        node_targets = torch.tensor(orbital_data['orbital_occupations'], dtype=torch.float)
         
         # Hybridization targets: [s%, p%, d%, f%] for each orbital
         hybrid_targets = torch.tensor(orbital_data['orbital_hybridization'], dtype=torch.float)
         
         # Global target: MCSCF energy
-        global_target = torch.tensor([final_energy], dtype=torch.float).view(-1, 1)
+        global_target = torch.tensor([final_energy], dtype=torch.float)
         
         # Create orbital positions for distance calculations
         orbital_positions = []
@@ -337,7 +337,7 @@ class OrbitalGAMESSParser:
             edge_index=torch.tensor(edges, dtype=torch.long).t().contiguous(),
             edge_attr=torch.tensor(edge_features, dtype=torch.float).view(-1, 1),
             y=node_targets,
-            edge_y=torch.tensor(edge_targets, dtype=torch.float).view(-1, 1),
+            edge_y=torch.tensor(edge_targets, dtype=torch.float),
             global_y=global_target,
             hybrid_y=hybrid_targets,  # NEW: Hybridization targets [N_orbitals x 4]
             pos=torch.tensor(orbital_positions, dtype=torch.float),

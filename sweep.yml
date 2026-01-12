@@ -36,6 +36,12 @@ parameters:
   include_hybridization:
     values: [true, false]
 
+  include_orbital_type:
+    values: [true, false]
+
+  include_m_quantum:
+    values: [true, false]
+
   use_element_baselines:
     values: [true, false]
 

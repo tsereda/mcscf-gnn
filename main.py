@@ -61,8 +61,13 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
     files_to_use = [f for f in all_files if f not in exclude_files]
     print(f"Using {len(files_to_use)}/{len(all_files)} files (excluding {len(exclude_files)} validation files)")
     
-    # Parse training files only
-    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    # Parse training files only with feature flags
+    parser = OrbitalGAMESSParser(
+        distance_cutoff=4.0, 
+        debug=False,
+        include_orbital_type=config['model'].get('include_orbital_type', True),
+        include_m_quantum=config['model'].get('include_m_quantum', True)
+    )
     train_graphs = process_orbital_files(parser, files_to_use)
     
     if len(train_graphs) == 0:
@@ -104,7 +109,9 @@ def main():
             'use_rbf_distance': False,
             'num_rbf': 50,
             'rbf_cutoff': 5.0,
-            'include_hybridization': True
+            'include_hybridization': True,
+            'include_orbital_type': True,
+            'include_m_quantum': True
         },
         'training': {
             'learning_rate': 0.0001,
@@ -205,6 +212,18 @@ def main():
             True  # Default to True for backward compatibility
         )
         
+        # Input feature parameters (for publication experiments)
+        config['model']['include_orbital_type'] = getattr(
+            wandb.config,
+            'include_orbital_type',
+            True  # Default to True
+        )
+        config['model']['include_m_quantum'] = getattr(
+            wandb.config,
+            'include_m_quantum',
+            True  # Default to True
+        )
+        
         # Element baselines parameter (physics-informed inductive bias)
         config['model']['use_element_baselines'] = getattr(
             wandb.config,
@@ -229,6 +248,8 @@ def main():
         print(f"Normalization: {'Global' if wandb.config.normalization_global else 'Per-fold'} (enabled={wandb.config.normalization_enabled})")
         print(f"Loss Balancing Strategy: {strategy}")
         print(f"Include Hybridization: {config['model']['include_hybridization']}")
+        print(f"Include Orbital Type: {config['model']['include_orbital_type']}")
+        print(f"Include M Quantum: {config['model']['include_m_quantum']}")
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.kei_bo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
         print(f"Hidden Dim: {config['model']['hidden_dim']}")
@@ -367,7 +388,9 @@ def main():
                     all_files,
                     split_ratio=config['data']['val_split_ratio'],
                     random_seed=config['data']['random_seed'],
-                    batch_size=config['training']['batch_size']
+                    batch_size=config['training']['batch_size'],
+                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_m_quantum=config['model']['include_m_quantum']
                 )
                 
                 # For random split, we need to extract val_files from fold_info
@@ -388,7 +411,10 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_element_based_fold_data(
-                    all_files, file_to_folder, element_index, available_elements, config['training']['batch_size']
+                    all_files, file_to_folder, element_index, available_elements, 
+                    config['training']['batch_size'],
+                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_m_quantum=config['model']['include_m_quantum']
                 )
                 
                 # Get validation files for this fold
@@ -401,7 +427,10 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_single_fold_data(
-                    folder_files, validation_folder, config['training']['batch_size']
+                    folder_files, validation_folder, 
+                    config['training']['batch_size'],
+                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_m_quantum=config['model']['include_m_quantum']
                 )
                 
                 val_files = folder_files[validation_folder]
@@ -428,7 +457,15 @@ def main():
                     print(f"Using PER-FOLD normalizer")
             
             # Create orbital model
+            # Compute orbital_input_dim based on feature flags
+            orbital_input_dim = 1  # Always atomic_num
+            if config['model']['include_orbital_type']:
+                orbital_input_dim += 1
+            if config['model']['include_m_quantum']:
+                orbital_input_dim += 1
+            
             model = create_orbital_model(
+                orbital_input_dim=orbital_input_dim,
                 hidden_dim=config['model']['hidden_dim'],
                 num_layers=config['model']['num_layers'],
                 dropout=config['model']['dropout'],
@@ -438,6 +475,8 @@ def main():
                 num_rbf=config['model']['num_rbf'],
                 rbf_cutoff=config['model']['rbf_cutoff'],
                 include_hybridization=config['model']['include_hybridization'],
+                include_orbital_type=config['model']['include_orbital_type'],
+                include_m_quantum=config['model']['include_m_quantum'],
                 use_element_baselines=config['model'].get('use_element_baselines', True)
             )
             

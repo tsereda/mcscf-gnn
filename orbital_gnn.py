@@ -678,7 +678,7 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict:
         return {'mse': mse, 'mae': mae}
 
 
-def create_orbital_model(orbital_input_dim: int = 1,
+def create_orbital_model(orbital_input_dim: int = 2,
                         edge_input_dim: int = 1,
                         hidden_dim: int = 128,
                         num_layers: int = 4,
@@ -697,11 +697,10 @@ def create_orbital_model(orbital_input_dim: int = 1,
     Factory function to create orbital-centric GNN model.
     
     Args:
-        orbital_input_dim: Number of input features (1-3)
-            - 1: [atomic_num] only (most minimal)
-            - 2: [atomic_num, orbital_type] (with orbital type)
+        orbital_input_dim: Number of input features (2-3)
+            - 2: [atomic_num, orbital_type] (minimal but pragmatic)
             - 3: [atomic_num, orbital_type, m_quantum] (full features, no occupation)
-        include_orbital_type: Whether orbital type is included in inputs
+        include_orbital_type: Whether orbital type is included in inputs (always True now)
         include_m_quantum: Whether m_quantum is included in inputs
     """
     return OrbitalTripleTaskGNN(

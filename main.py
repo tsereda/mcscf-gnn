@@ -65,7 +65,7 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
     parser = OrbitalGAMESSParser(
         distance_cutoff=4.0, 
         debug=False,
-        include_orbital_type=config['model'].get('include_orbital_type', True),
+        include_orbital_type=True,  # Always True
         include_m_quantum=config['model'].get('include_m_quantum', True)
     )
     train_graphs = process_orbital_files(parser, files_to_use)
@@ -110,7 +110,6 @@ def main():
             'num_rbf': 50,
             'rbf_cutoff': 5.0,
             'include_hybridization': True,
-            'include_orbital_type': True,
             'include_m_quantum': True
         },
         'training': {
@@ -206,6 +205,7 @@ def main():
         config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
         
         # Hybridization parameter
+        # Hybridization parameter
         config['model']['include_hybridization'] = getattr(
             wandb.config,
             'include_hybridization',
@@ -213,11 +213,6 @@ def main():
         )
         
         # Input feature parameters (for publication experiments)
-        config['model']['include_orbital_type'] = getattr(
-            wandb.config,
-            'include_orbital_type',
-            True  # Default to True
-        )
         config['model']['include_m_quantum'] = getattr(
             wandb.config,
             'include_m_quantum',
@@ -225,7 +220,6 @@ def main():
         )
         
         # Element baselines parameter (physics-informed inductive bias)
-        config['model']['use_element_baselines'] = getattr(
             wandb.config,
             'use_element_baselines',
             True  # Default to True for physics-informed learning
@@ -252,11 +246,10 @@ def main():
         print(f"Include M Quantum: {config['model']['include_m_quantum']}")
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.kei_bo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
-        print(f"Hidden Dim: {config['model']['hidden_dim']}")
-        print(f"Num Layers: {config['model']['num_layers']}")
-        print(f"Orbital Embedding Dim: {config['model']['orbital_embedding_dim']}")
-        print(f"RBF Distance Encoding: {config['model']['use_rbf_distance']} (num_rbf={config['model']['num_rbf']}, cutoff={config['model']['rbf_cutoff']})")
-        print(f"Epochs: {config['training']['num_epochs']}")
+        print(f"Loss Balancing Strategy: {strategy}")
+        print(f"Include Hybridization: {config['model']['include_hybridization']}")
+        print(f"Include M Quantum: {config['model']['include_m_quantum']}")
+        print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
     else:
         config = default_config
         print("Starting Orbital N-Fold Cross-Validation Training")
@@ -390,14 +383,14 @@ def main():
                     random_seed=config['data']['random_seed'],
                     batch_size=config['training']['batch_size'],
                     include_orbital_type=config['model']['include_orbital_type'],
+                train_loader, val_loader, fold_info = prepare_random_split_data(
+                    all_files,
+                    split_ratio=config['data']['val_split_ratio'],
+                    random_seed=config['data']['random_seed'],
+                    batch_size=config['training']['batch_size'],
+                    include_orbital_type=True,  # Always True
                     include_m_quantum=config['model']['include_m_quantum']
-                )
-                
-                # For random split, we need to extract val_files from fold_info
-                # Since we don't have direct access, we'll use a proportion of all_files
-                split_idx = int(len(all_files) * (1 - config['data']['val_split_ratio']))
-                np.random.seed(config['data']['random_seed'])
-                shuffled = all_files.copy()
+                )huffled = all_files.copy()
                 np.random.shuffle(shuffled)
                 val_files = shuffled[split_idx:]
                 
@@ -411,12 +404,12 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_element_based_fold_data(
+                train_loader, val_loader, fold_info = prepare_element_based_fold_data(
                     all_files, file_to_folder, element_index, available_elements, 
                     config['training']['batch_size'],
-                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_orbital_type=True,  # Always True
                     include_m_quantum=config['model']['include_m_quantum']
                 )
-                
                 # Get validation files for this fold
                 val_files = [f for f in all_files if file_to_folder.get(f) in fold_info.get('validation_actual_folders', [])]
                 
@@ -427,12 +420,12 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_single_fold_data(
+                train_loader, val_loader, fold_info = prepare_single_fold_data(
                     folder_files, validation_folder, 
                     config['training']['batch_size'],
-                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_orbital_type=True,  # Always True
                     include_m_quantum=config['model']['include_m_quantum']
                 )
-                
                 val_files = folder_files[validation_folder]
             
             # Determine normalizer
@@ -462,7 +455,11 @@ def main():
             if config['model']['include_orbital_type']:
                 orbital_input_dim += 1
             if config['model']['include_m_quantum']:
-                orbital_input_dim += 1
+            # Create orbital model
+            # Compute orbital_input_dim based on feature flags
+            orbital_input_dim = 2  # Always atomic_num + orbital_type
+            if config['model']['include_m_quantum']:
+                orbital_input_dim += 1  # Add m_quantum
             
             model = create_orbital_model(
                 orbital_input_dim=orbital_input_dim,
@@ -475,16 +472,10 @@ def main():
                 num_rbf=config['model']['num_rbf'],
                 rbf_cutoff=config['model']['rbf_cutoff'],
                 include_hybridization=config['model']['include_hybridization'],
-                include_orbital_type=config['model']['include_orbital_type'],
+                include_orbital_type=True,  # Always True now
                 include_m_quantum=config['model']['include_m_quantum'],
                 use_element_baselines=config['model'].get('use_element_baselines', True)
-            )
-            
-            # Create trainer
-            trainer = OrbitalGAMESSTrainer(
-                model=model,
-                learning_rate=config['training']['learning_rate'],
-                weight_decay=config['training']['weight_decay'],
+            )   weight_decay=config['training']['weight_decay'],
                 occupation_weight=config['training']['occupation_weight'],
                 kei_bo_weight=config['training']['kei_bo_weight'],
                 energy_weight=config['training']['energy_weight'],

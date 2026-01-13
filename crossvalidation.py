@@ -173,7 +173,9 @@ def split_files_by_element_with_folders(all_files: List[str], file_to_folder: Di
 def prepare_random_split_data(all_files: List[str],
                               split_ratio: float = 0.2,
                               random_seed: int = 42,
-                              batch_size: int = 16) -> Tuple[DataLoader, DataLoader, Dict]:
+                              batch_size: int = 16,
+                              include_orbital_type: bool = True,
+                              include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare data with random train/validation split.
     
@@ -208,7 +210,12 @@ def prepare_random_split_data(all_files: List[str],
     print(f"Validation files: {len(val_files)}")
     
     # Process files with orbital parser
-    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    parser = OrbitalGAMESSParser(
+        distance_cutoff=4.0, 
+        debug=False,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum
+    )
     
     print(f"Processing training files...")
     train_graphs = process_orbital_files(parser, train_files)
@@ -247,7 +254,9 @@ def prepare_element_based_fold_data(all_files: List[str],
                                   file_to_folder: Dict[str, str],
                                   fold_num: int,
                                   available_elements: List[str],
-                                  batch_size: int = 16) -> Tuple[DataLoader, DataLoader, Dict]:
+                                  batch_size: int = 16,
+                                  include_orbital_type: bool = True,
+                                  include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare orbital data for element-based cross-validation.
     Each fold validates on molecules containing a specific element.
@@ -317,8 +326,10 @@ def prepare_element_based_fold_data(all_files: List[str],
 
 
 def prepare_single_fold_data(folder_files: Dict[str, List[str]], 
-                           validation_folder: str,
-                           batch_size: int = 16) -> Tuple[DataLoader, DataLoader, Dict]:
+                             validation_folder: str,
+                             batch_size: int = 16,
+                             include_orbital_type: bool = True,
+                             include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare orbital data for a single fold with specified validation folder.
     
@@ -344,7 +355,12 @@ def prepare_single_fold_data(folder_files: Dict[str, List[str]],
     print(f"Validation: 1 folder ({validation_folder}), {len(val_files)} files")
     
     # Process files with orbital parser
-    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    parser = OrbitalGAMESSParser(
+        distance_cutoff=4.0, 
+        debug=False,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum
+    )
     
     print(f"Processing training files...")
     train_graphs = process_orbital_files(parser, train_files)

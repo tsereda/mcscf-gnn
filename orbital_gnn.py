@@ -58,65 +58,81 @@ class GaussianRBF(nn.Module):
 
 
 class OrbitalEmbedding(nn.Module):
-    """Embedding layer for orbital features"""
+    """Embedding layer for orbital features with configurable inputs"""
     
-    def __init__(self, max_atomic_num: int = 20, orbital_embedding_dim: int = 32):
+    def __init__(self, orbital_input_dim: int, max_atomic_num: int = 20, 
+                 orbital_embedding_dim: int = 32,
+                 include_orbital_type: bool = True,
+                 include_m_quantum: bool = True):
         super(OrbitalEmbedding, self).__init__()
         
-        # Store dimensions
+        # Store configuration
+        self.orbital_input_dim = orbital_input_dim
         self.orbital_embedding_dim = orbital_embedding_dim
+        self.include_orbital_type = include_orbital_type
+        self.include_m_quantum = include_m_quantum
+        
+        # Embedding dimensions
         self.atomic_embed_dim = orbital_embedding_dim
-        self.orbital_type_embed_dim = max(1, orbital_embedding_dim // 2)  # Ensure at least 1
-        self.m_quantum_embed_dim = max(1, orbital_embedding_dim // 4)     # Ensure at least 1
+        self.orbital_type_embed_dim = max(1, orbital_embedding_dim // 2) if include_orbital_type else 0
+        self.m_quantum_embed_dim = max(1, orbital_embedding_dim // 4) if include_m_quantum else 0
         
         # Embeddings for different orbital properties
         self.atomic_embedding = nn.Embedding(max_atomic_num + 1, self.atomic_embed_dim)
-        self.orbital_type_embedding = nn.Embedding(4, self.orbital_type_embed_dim)  # S, P, D, F
-        self.m_quantum_embedding = nn.Embedding(7, self.m_quantum_embed_dim)     # -3 to +3
         
-        # Calculate actual total input features
-        input_features = 1  # [occupation] - only continuous feature after embeddings
-        embedding_features = self.atomic_embed_dim + self.orbital_type_embed_dim + self.m_quantum_embed_dim
-        total_features = input_features + embedding_features
+        if include_orbital_type:
+            self.orbital_type_embedding = nn.Embedding(4, self.orbital_type_embed_dim)  # S, P, D, F
+        
+        if include_m_quantum:
+            self.m_quantum_embedding = nn.Embedding(7, self.m_quantum_embed_dim)  # -3 to +3
+        
+        # Calculate total features (only embeddings, no continuous features)
+        total_features = self.atomic_embed_dim + self.orbital_type_embed_dim + self.m_quantum_embed_dim
         
         self.feature_combiner = nn.Linear(total_features, orbital_embedding_dim)
         
-        print(f"OrbitalEmbedding dimensions:")
+        print(f"OrbitalEmbedding (input_dim={orbital_input_dim}):")
         print(f"  atomic_embed_dim: {self.atomic_embed_dim}")
-        print(f"  orbital_type_embed_dim: {self.orbital_type_embed_dim}")
-        print(f"  m_quantum_embed_dim: {self.m_quantum_embed_dim}")
+        if include_orbital_type:
+            print(f"  orbital_type_embed_dim: {self.orbital_type_embed_dim}")
+        if include_m_quantum:
+            print(f"  m_quantum_embed_dim: {self.m_quantum_embed_dim}")
         print(f"  total_features: {total_features}")
         print(f"  output_dim: {orbital_embedding_dim}")
         
     def forward(self, orbital_features: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            orbital_features: [num_orbitals, 4] tensor with features:
-                [atomic_num, orbital_type, m_quantum, occupation]
+            orbital_features: [num_orbitals, 1-3] tensor with features:
+                - Always: [atomic_num]
+                - Optional: [atomic_num, orbital_type]
+                - Optional: [atomic_num, orbital_type, m_quantum]
         
         Returns:
             embedded_features: [num_orbitals, orbital_embedding_dim]
         """
-        # Extract discrete features for embedding
+        # Extract atomic number (always present)
         atomic_nums = orbital_features[:, 0].long()
-        orbital_types = orbital_features[:, 1].long()
-        m_quantums = orbital_features[:, 2].long() + 3  # Shift to 0-6 range
-        
-        # Create embeddings
         atomic_embeds = self.atomic_embedding(atomic_nums)
-        orbital_embeds = self.orbital_type_embedding(orbital_types)
-        m_quantum_embeds = self.m_quantum_embedding(m_quantums)
         
-        # Extract continuous feature (occupation)
-        occupation = orbital_features[:, 3:4]  # Keep 2D shape [num_orbitals, 1]
+        # Start with atomic embeddings
+        embeddings_list = [atomic_embeds]
         
-        # Concatenate all features
-        combined_features = torch.cat([
-            occupation,
-            atomic_embeds,
-            orbital_embeds,
-            m_quantum_embeds
-        ], dim=1)
+        # Extract orbital type if present
+        if self.include_orbital_type and orbital_features.shape[1] >= 2:
+            orbital_types = orbital_features[:, 1].long()
+            orbital_embeds = self.orbital_type_embedding(orbital_types)
+            embeddings_list.append(orbital_embeds)
+        
+        # Extract m_quantum if present
+        if self.include_m_quantum and orbital_features.shape[1] >= 3:
+            col_idx = 2 if self.include_orbital_type else 1
+            m_quantums = orbital_features[:, col_idx].long() + 3  # Shift to 0-6 range
+            m_quantum_embeds = self.m_quantum_embedding(m_quantums)
+            embeddings_list.append(m_quantum_embeds)
+        
+        # Concatenate all embeddings
+        combined_features = torch.cat(embeddings_list, dim=1)
         
         # Final combination
         embedded_features = self.feature_combiner(combined_features)
@@ -233,8 +249,8 @@ class OrbitalTripleTaskGNN(nn.Module):
     """Orbital-centric GNN for predicting orbital occupations, KEI-BO values, molecular energy, and hybridization"""
     
     def __init__(self, 
-                 orbital_input_dim: int = 4,      # [atomic_num, orbital_type, m_quantum, occupation]
-                 edge_input_dim: int = 1,         # distance (raw)
+                 orbital_input_dim: int = 1,      # 1-3: [atomic_num] or [atomic_num, orbital_type] or [atomic_num, orbital_type, m_quantum]
+                 edge_input_dim: int = 1,         # [distance] or [rbf_expanded_distance]
                  hidden_dim: int = 128,
                  num_layers: int = 4,
                  dropout: float = 0.1,
@@ -245,14 +261,20 @@ class OrbitalTripleTaskGNN(nn.Module):
                  num_rbf: int = 50,
                  rbf_cutoff: float = 5.0,
                  include_hybridization: bool = True,
+                 include_orbital_type: bool = True,
+                 include_m_quantum: bool = True,
                  use_element_baselines: bool = True):
         super(OrbitalTripleTaskGNN, self).__init__()
         
+        self.orbital_input_dim = orbital_input_dim
+        self.edge_input_dim = edge_input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.global_pooling_method = global_pooling_method
         self.use_rbf_distance = use_rbf_distance
         self.include_hybridization = include_hybridization
+        self.include_orbital_type = include_orbital_type
+        self.include_m_quantum = include_m_quantum
         self.use_element_baselines = use_element_baselines
         
         # Per-element energy baselines (physics-informed inductive bias)
@@ -277,7 +299,13 @@ class OrbitalTripleTaskGNN(nn.Module):
             print(f"Using raw distance encoding")
         
         # Orbital embedding layer
-        self.orbital_embedding = OrbitalEmbedding(max_atomic_num, orbital_embedding_dim)
+        self.orbital_embedding = OrbitalEmbedding(
+            orbital_input_dim=orbital_input_dim,
+            max_atomic_num=max_atomic_num,
+            orbital_embedding_dim=orbital_embedding_dim,
+            include_orbital_type=include_orbital_type,
+            include_m_quantum=include_m_quantum
+        )
         
         # Initial projection to hidden dimension
         self.input_projection = nn.Linear(orbital_embedding_dim, hidden_dim)
@@ -650,7 +678,7 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict:
         return {'mse': mse, 'mae': mae}
 
 
-def create_orbital_model(orbital_input_dim: int = 4,
+def create_orbital_model(orbital_input_dim: int = 2,
                         edge_input_dim: int = 1,
                         hidden_dim: int = 128,
                         num_layers: int = 4,
@@ -662,8 +690,19 @@ def create_orbital_model(orbital_input_dim: int = 4,
                         num_rbf: int = 50,
                         rbf_cutoff: float = 5.0,
                         include_hybridization: bool = True,
+                        include_orbital_type: bool = True,
+                        include_m_quantum: bool = True,
                         use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
-    """Factory function to create the orbital-centric model"""
+    """
+    Factory function to create orbital-centric GNN model.
+    
+    Args:
+        orbital_input_dim: Number of input features (2-3)
+            - 2: [atomic_num, orbital_type] (minimal but pragmatic)
+            - 3: [atomic_num, orbital_type, m_quantum] (full features, no occupation)
+        include_orbital_type: Whether orbital type is included in inputs (always True now)
+        include_m_quantum: Whether m_quantum is included in inputs
+    """
     return OrbitalTripleTaskGNN(
         orbital_input_dim=orbital_input_dim,
         edge_input_dim=edge_input_dim,
@@ -677,6 +716,14 @@ def create_orbital_model(orbital_input_dim: int = 4,
         num_rbf=num_rbf,
         rbf_cutoff=rbf_cutoff,
         include_hybridization=include_hybridization,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum,
+        use_element_baselines=use_element_baselines
+    )
+        rbf_cutoff=rbf_cutoff,
+        include_hybridization=include_hybridization,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum,
         use_element_baselines=use_element_baselines
     )
 

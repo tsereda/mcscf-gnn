@@ -11,10 +11,13 @@ import sys
 
 class OrbitalGAMESSParser:
     
-    def __init__(self, distance_cutoff: float = 4.0, debug: bool = False, min_atoms: int = 2):
+    def __init__(self, distance_cutoff: float = 4.0, debug: bool = False, min_atoms: int = 2,
+                 include_orbital_type: bool = True, include_m_quantum: bool = True):
         self.distance_cutoff = distance_cutoff
         self.debug = debug
         self.min_atoms = min_atoms
+        self.include_orbital_type = include_orbital_type
+        self.include_m_quantum = include_m_quantum
         
         elements = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 
                     'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca']
@@ -201,10 +204,17 @@ class OrbitalGAMESSParser:
 
     def _create_orbital_data(self, atoms: List[str], density_matrix: np.ndarray, 
                            orbital_chars: Optional[Dict[int, Dict[str, float]]]) -> Dict:
-        """Create orbital-level data structure using 1s/4-orbital rule"""
+        """Create orbital-level data structure using 1s/4-orbital rule
+        
+        Features are controlled by flags:
+        - Always includes: atomic_num
+        - Optional: orbital_type (S=0, P=1) if include_orbital_type=True
+        - Optional: m_quantum (-1,0,1) if include_m_quantum=True
+        - NEVER includes occupation (that's the prediction target)
+        """
         orbital_data = {
             'orbital_positions': [],
-            'orbital_features': [],  # Now only 4 features: atomic_num, orbital_type, m_quantum, occupation
+            'orbital_features': [],  # 1-3 features: [atomic_num] or [atomic_num, orbital_type] or [atomic_num, orbital_type, m_quantum]
             'orbital_occupations': [],
             'orbital_hybridization': [],  # NEW: s%, p%, d%, f% as targets
             'parent_atoms': [],
@@ -246,13 +256,15 @@ class OrbitalGAMESSParser:
                 orbital_data['orbital_m_quantum'].append(m_quantums[i])
                 orbital_data['orbital_occupations'].append(occupation)
                 
-                # INPUT FEATURES: Only 4 features [atomic_num, orbital_type, m_quantum, occupation]
-                features = [
-                    atomic_number,
-                    0 if orbital_types[i] == 'S' else 1,  # S=0, P=1
-                    m_quantums[i],
-                    occupation
-                ]
+                # INPUT FEATURES: Configurable 1-3 features (NEVER includes occupation)
+                features = [atomic_number]  # Always include atomic number
+                
+                if self.include_orbital_type:
+                    features.append(0 if orbital_types[i] == 'S' else 1)  # S=0, P=1
+                
+                if self.include_m_quantum:
+                    features.append(m_quantums[i])  # -1, 0, 1
+                
                 orbital_data['orbital_features'].append(features)
                 
                 # TARGET: Hybridization percentages [s%, p%, d%, f%]
@@ -286,7 +298,8 @@ class OrbitalGAMESSParser:
         
         num_orbitals = len(orbital_data['orbital_features'])
         
-        # Node features: 4 input features [atomic_num, orbital_type, m_quantum, occupation]
+        # Node features: 1-3 input features [atomic_num] or [atomic_num, orbital_type] or [atomic_num, orbital_type, m_quantum]
+        # Occupation is NEVER an input - it's the prediction target
         node_features = torch.tensor(orbital_data['orbital_features'], dtype=torch.float)
         
         # Node targets: orbital occupations from density matrix diagonal

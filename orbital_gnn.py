@@ -693,8 +693,6 @@ def create_orbital_model(orbital_input_dim: int = 1,
                         include_orbital_type: bool = True,
                         include_m_quantum: bool = True,
                         use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
-                        include_m_quantum: bool = True,
-                        use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
     """
     Factory function to create orbital-centric GNN model.
     
@@ -722,13 +720,3 @@ def create_orbital_model(orbital_input_dim: int = 1,
         include_m_quantum=include_m_quantum,
         use_element_baselines=use_element_baselines
     )
-        rbf_cutoff=rbf_cutoff,
-        include_hybridization=include_hybridization,
-        include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum,
-        use_element_baselines=use_element_baselines
-    )
-
-
-# Backwards compatibility alias
-OrbitalTripleTaskLoss = OrbitalMultiTaskLoss

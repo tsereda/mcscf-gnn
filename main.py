@@ -227,6 +227,7 @@ def main():
         
         # Element baselines parameter (physics-informed inductive bias)
         config['model']['use_element_baselines'] = getattr(
+            wandb.config,
             'use_element_baselines',
             True  # Default to True for physics-informed learning
         )
@@ -391,6 +392,8 @@ def main():
                     include_orbital_type=config['model']['include_orbital_type'],
                     include_m_quantum=config['model']['include_m_quantum']
                 )
+                # Get validation files for this fold
+                val_files = fold_info.get('validation_files', [])
                 
             elif validation_mode == 'per_element':
                 target_element = elements_to_validate[fold_num]

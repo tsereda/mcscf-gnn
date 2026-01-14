@@ -295,16 +295,6 @@ def prepare_element_based_fold_data(all_files: List[str],
         include_orbital_type=include_orbital_type,
         include_m_quantum=include_m_quantum
     )
-        distance_cutoff=4.0, 
-        debug=False,
-        include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum
-    )
-    
-    print(f"Processing training files...")
-        include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum
-    )
     
     print(f"Processing training files...")
     train_graphs = process_orbital_files(parser, train_files)

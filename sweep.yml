@@ -71,10 +71,10 @@ parameters:
     values: [true, false]
   
   num_rbf:
-    values: [30,60]  # Number of Gaussian basis functions (only used if use_rbf_distance=true)
+    values: [30, 60]  # Number of Gaussian basis functions (only used if use_rbf_distance=true)
   
   rbf_cutoff:
-    value: [3,6]  # Maximum distance for RBF centers in Angstroms
+    values: [3, 6]  # Maximum distance for RBF centers in Angstroms
 
 command:
   - ${env}

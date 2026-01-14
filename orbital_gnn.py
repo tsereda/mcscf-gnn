@@ -125,11 +125,14 @@ class OrbitalEmbedding(nn.Module):
             embeddings_list.append(orbital_embeds)
         
         # Extract m_quantum if present
-        if self.include_m_quantum and orbital_features.shape[1] >= 3:
+        # m_quantum is at column index based on whether orbital_type is included
+        if self.include_m_quantum:
             col_idx = 2 if self.include_orbital_type else 1
-            m_quantums = orbital_features[:, col_idx].long() + 3  # Shift to 0-6 range
-            m_quantum_embeds = self.m_quantum_embedding(m_quantums)
-            embeddings_list.append(m_quantum_embeds)
+            expected_cols = col_idx + 1
+            if orbital_features.shape[1] >= expected_cols:
+                m_quantums = orbital_features[:, col_idx].long() + 3  # Shift to 0-6 range
+                m_quantum_embeds = self.m_quantum_embedding(m_quantums)
+                embeddings_list.append(m_quantum_embeds)
         
         # Concatenate all embeddings
         combined_features = torch.cat(embeddings_list, dim=1)

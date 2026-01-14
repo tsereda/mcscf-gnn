@@ -289,7 +289,22 @@ def prepare_element_based_fold_data(all_files: List[str],
     print(f"Validation: {validation_description} ({len(val_files)} files)")
     
     # Process files with orbital parser
-    parser = OrbitalGAMESSParser(distance_cutoff=4.0, debug=False)
+    parser = OrbitalGAMESSParser(
+        distance_cutoff=4.0, 
+        debug=False,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum
+    )
+        distance_cutoff=4.0, 
+        debug=False,
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum
+    )
+    
+    print(f"Processing training files...")
+        include_orbital_type=include_orbital_type,
+        include_m_quantum=include_m_quantum
+    )
     
     print(f"Processing training files...")
     train_graphs = process_orbital_files(parser, train_files)

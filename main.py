@@ -65,7 +65,7 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
     parser = OrbitalGAMESSParser(
         distance_cutoff=4.0, 
         debug=False,
-        include_orbital_type=True,  # Always True
+        include_orbital_type=config['model'].get('include_orbital_type', True),
         include_m_quantum=config['model'].get('include_m_quantum', True)
     )
     train_graphs = process_orbital_files(parser, files_to_use)
@@ -213,6 +213,12 @@ def main():
         )
         
         # Input feature parameters (for publication experiments)
+        config['model']['include_orbital_type'] = getattr(
+            wandb.config,
+            'include_orbital_type',
+            True  # Default to True
+        )
+        
         config['model']['include_m_quantum'] = getattr(
             wandb.config,
             'include_m_quantum',
@@ -220,7 +226,7 @@ def main():
         )
         
         # Element baselines parameter (physics-informed inductive bias)
-            wandb.config,
+        config['model']['use_element_baselines'] = getattr(
             'use_element_baselines',
             True  # Default to True for physics-informed learning
         )
@@ -383,16 +389,8 @@ def main():
                     random_seed=config['data']['random_seed'],
                     batch_size=config['training']['batch_size'],
                     include_orbital_type=config['model']['include_orbital_type'],
-                train_loader, val_loader, fold_info = prepare_random_split_data(
-                    all_files,
-                    split_ratio=config['data']['val_split_ratio'],
-                    random_seed=config['data']['random_seed'],
-                    batch_size=config['training']['batch_size'],
-                    include_orbital_type=True,  # Always True
                     include_m_quantum=config['model']['include_m_quantum']
-                )huffled = all_files.copy()
-                np.random.shuffle(shuffled)
-                val_files = shuffled[split_idx:]
+                )
                 
             elif validation_mode == 'per_element':
                 target_element = elements_to_validate[fold_num]
@@ -404,10 +402,9 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_element_based_fold_data(
-                train_loader, val_loader, fold_info = prepare_element_based_fold_data(
                     all_files, file_to_folder, element_index, available_elements, 
                     config['training']['batch_size'],
-                    include_orbital_type=True,  # Always True
+                    include_orbital_type=config['model']['include_orbital_type'],
                     include_m_quantum=config['model']['include_m_quantum']
                 )
                 # Get validation files for this fold
@@ -420,10 +417,9 @@ def main():
                 print(f"{'='*70}")
                 
                 train_loader, val_loader, fold_info = prepare_single_fold_data(
-                train_loader, val_loader, fold_info = prepare_single_fold_data(
                     folder_files, validation_folder, 
                     config['training']['batch_size'],
-                    include_orbital_type=True,  # Always True
+                    include_orbital_type=config['model']['include_orbital_type'],
                     include_m_quantum=config['model']['include_m_quantum']
                 )
                 val_files = folder_files[validation_folder]
@@ -455,10 +451,6 @@ def main():
             if config['model']['include_orbital_type']:
                 orbital_input_dim += 1
             if config['model']['include_m_quantum']:
-            # Create orbital model
-            # Compute orbital_input_dim based on feature flags
-            orbital_input_dim = 2  # Always atomic_num + orbital_type
-            if config['model']['include_m_quantum']:
                 orbital_input_dim += 1  # Add m_quantum
             
             model = create_orbital_model(
@@ -472,10 +464,17 @@ def main():
                 num_rbf=config['model']['num_rbf'],
                 rbf_cutoff=config['model']['rbf_cutoff'],
                 include_hybridization=config['model']['include_hybridization'],
-                include_orbital_type=True,  # Always True now
+                include_orbital_type=config['model']['include_orbital_type'],
                 include_m_quantum=config['model']['include_m_quantum'],
                 use_element_baselines=config['model'].get('use_element_baselines', True)
-            )   weight_decay=config['training']['weight_decay'],
+            )
+            
+            # Create trainer
+            trainer = OrbitalTrainer(
+                model=model,
+                device=device,
+                learning_rate=config['training']['learning_rate'],
+                weight_decay=config['training']['weight_decay'],
                 occupation_weight=config['training']['occupation_weight'],
                 kei_bo_weight=config['training']['kei_bo_weight'],
                 energy_weight=config['training']['energy_weight'],

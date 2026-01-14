@@ -678,7 +678,7 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict:
         return {'mse': mse, 'mae': mae}
 
 
-def create_orbital_model(orbital_input_dim: int = 2,
+def create_orbital_model(orbital_input_dim: int = 1,
                         edge_input_dim: int = 1,
                         hidden_dim: int = 128,
                         num_layers: int = 4,
@@ -691,6 +691,8 @@ def create_orbital_model(orbital_input_dim: int = 2,
                         rbf_cutoff: float = 5.0,
                         include_hybridization: bool = True,
                         include_orbital_type: bool = True,
+                        include_m_quantum: bool = True,
+                        use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
                         include_m_quantum: bool = True,
                         use_element_baselines: bool = True) -> OrbitalTripleTaskGNN:
     """

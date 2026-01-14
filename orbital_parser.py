@@ -423,9 +423,11 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
             for j, features in enumerate(orbital_data['orbital_features']):
                 parent_atom_idx = orbital_data['orbital_positions'][j]
                 atom_symbol = atoms[parent_atom_idx]
-                orbital_type = ['S', 'P', 'D', 'F'][int(features[1])]
-                m_quantum = int(features[2])
-                occupation = features[3]
+                # Extract orbital info from stored data (not from features which are inputs)
+                orbital_type_val = orbital_data['orbital_types'][j]
+                orbital_type = ['S', 'P', 'D', 'F'][orbital_type_val]
+                m_quantum = orbital_data['orbital_m_quantum'][j]
+                occupation = orbital_data['orbital_occupations'][j]
                 print(f"  {j+1:2d} {atom_symbol}{parent_atom_idx+1}-{orbital_type}{m_quantum}: occ={occupation:.4f}")
             
             print(f"\nSignificant KEI-BO orbital interactions:")

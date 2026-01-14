@@ -12,7 +12,7 @@ from normalization import DataNormalizer
 from gradnorm import GradNormLoss
 
 
-class OrbitalGAMESSTrainer:
+class OrbitalTrainer:
     """Trainer class for the orbital-centric triple-task GAMESS GNN"""
     
     def __init__(self, model: OrbitalTripleTaskGNN,

@@ -13,9 +13,10 @@ from datetime import datetime
 import wandb
 import sys
 import numpy as np
+import torch
 
 from orbital_gnn import create_orbital_model
-from orbital_trainer import OrbitalGAMESSTrainer, process_orbital_files
+from orbital_trainer import OrbitalTrainer, process_orbital_files
 from orbital_parser import OrbitalGAMESSParser
 from torch_geometric.data import DataLoader
 from normalization import DataNormalizer
@@ -148,6 +149,10 @@ def main():
         },
         'use_first_epoch_weighting': False,
     }
+    
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
     
     # Initialize WandB if in sweep mode
     if is_sweep:

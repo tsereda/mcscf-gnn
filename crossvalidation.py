@@ -475,6 +475,16 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 orbital_offset = orbital_mask.nonzero(as_tuple=False)[0, 0].item()
                 mol_edge_index = mol_edge_index - orbital_offset
                 
+                # Extract hybridization predictions for this molecule
+                mol_s_preds = s_pred[orbital_mask].cpu()
+                mol_s_targets = original_s_targets[orbital_mask].cpu()
+                mol_p_preds = p_pred[orbital_mask].cpu()
+                mol_p_targets = original_p_targets[orbital_mask].cpu()
+                mol_d_preds = d_pred[orbital_mask].cpu()
+                mol_d_targets = original_d_targets[orbital_mask].cpu()
+                mol_f_preds = f_pred[orbital_mask].cpu()
+                mol_f_targets = original_f_targets[orbital_mask].cpu()
+                
                 mol_data = {
                     'mol_idx': mol_idx,
                     'num_orbitals': mol_orbitals,
@@ -487,7 +497,15 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                     'energy_pred': mol_energy_pred.item(),
                     'energy_target': mol_energy_target.item(),
                     'edge_distances': mol_edge_attr.numpy().flatten(),
-                    'edge_index': mol_edge_index.numpy()
+                    'edge_index': mol_edge_index.numpy(),
+                    's_preds': mol_s_preds.numpy().flatten(),
+                    's_targets': mol_s_targets.numpy().flatten(),
+                    'p_preds': mol_p_preds.numpy().flatten(),
+                    'p_targets': mol_p_targets.numpy().flatten(),
+                    'd_preds': mol_d_preds.numpy().flatten(),
+                    'd_targets': mol_d_targets.numpy().flatten(),
+                    'f_preds': mol_f_preds.numpy().flatten(),
+                    'f_targets': mol_f_targets.numpy().flatten()
                 }
                 
                 all_molecules.append(mol_data)
@@ -613,6 +631,30 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
         report.append(f"Occupation MAE: {occupation_mae:.6f}")
         report.append("")
         
+        # Hybridization analysis
+        report.append("HYBRIDIZATION PERCENTAGES:")
+        report.append("Orb#    s%_Pred   s%_Targ   p%_Pred   p%_Targ   d%_Pred   d%_Targ   f%_Pred   f%_Targ")
+        report.append("-" * 90)
+        
+        s_abs_errors = np.abs(mol['s_preds'] - mol['s_targets'])
+        p_abs_errors = np.abs(mol['p_preds'] - mol['p_targets'])
+        d_abs_errors = np.abs(mol['d_preds'] - mol['d_targets'])
+        f_abs_errors = np.abs(mol['f_preds'] - mol['f_targets'])
+        
+        for i in range(mol['num_orbitals']):
+            report.append(f"{i+1:4d} "
+                         f"{mol['s_preds'][i]:9.4f} {mol['s_targets'][i]:9.4f} "
+                         f"{mol['p_preds'][i]:9.4f} {mol['p_targets'][i]:9.4f} "
+                         f"{mol['d_preds'][i]:9.4f} {mol['d_targets'][i]:9.4f} "
+                         f"{mol['f_preds'][i]:9.4f} {mol['f_targets'][i]:9.4f}")
+        
+        s_mae = np.mean(s_abs_errors)
+        p_mae = np.mean(p_abs_errors)
+        d_mae = np.mean(d_abs_errors)
+        f_mae = np.mean(f_abs_errors)
+        report.append(f"Hybridization MAE: s={s_mae:.6f}, p={p_mae:.6f}, d={d_mae:.6f}, f={f_mae:.6f}")
+        report.append("")
+        
         # KEI-BO interaction analysis
         if mol['num_interactions'] > 0:
             report.append("KEI-BO INTERACTIONS:")
@@ -688,6 +730,16 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
     train_kei_bo_mse = [to_python_float(r['train_metrics']['kei_bo'][-1]['mse']) for r in all_results]
     train_energy_mse = [to_python_float(r['train_metrics']['energy'][-1]['mse']) for r in all_results]
     
+    # Add hybridization summary statistics
+    val_s_mse = [to_python_float(r['val_metrics']['s_percent'][-1]['mse']) for r in all_results]
+    val_p_mse = [to_python_float(r['val_metrics']['p_percent'][-1]['mse']) for r in all_results]
+    val_d_mse = [to_python_float(r['val_metrics']['d_percent'][-1]['mse']) for r in all_results]
+    val_f_mse = [to_python_float(r['val_metrics']['f_percent'][-1]['mse']) for r in all_results]
+    train_s_mse = [to_python_float(r['train_metrics']['s_percent'][-1]['mse']) for r in all_results]
+    train_p_mse = [to_python_float(r['train_metrics']['p_percent'][-1]['mse']) for r in all_results]
+    train_d_mse = [to_python_float(r['train_metrics']['d_percent'][-1]['mse']) for r in all_results]
+    train_f_mse = [to_python_float(r['train_metrics']['f_percent'][-1]['mse']) for r in all_results]
+    
     combined_results['summary_statistics'] = {
         'val_occupation_mse': {
             'mean': float(np.mean(val_occupation_mse)),
@@ -730,6 +782,62 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
             'min': float(np.min(train_energy_mse)),
             'max': float(np.max(train_energy_mse)),
             'values': train_energy_mse
+        },
+        'val_s_percent_mse': {
+            'mean': float(np.mean(val_s_mse)),
+            'std': float(np.std(val_s_mse)),
+            'min': float(np.min(val_s_mse)),
+            'max': float(np.max(val_s_mse)),
+            'values': val_s_mse
+        },
+        'val_p_percent_mse': {
+            'mean': float(np.mean(val_p_mse)),
+            'std': float(np.std(val_p_mse)),
+            'min': float(np.min(val_p_mse)),
+            'max': float(np.max(val_p_mse)),
+            'values': val_p_mse
+        },
+        'val_d_percent_mse': {
+            'mean': float(np.mean(val_d_mse)),
+            'std': float(np.std(val_d_mse)),
+            'min': float(np.min(val_d_mse)),
+            'max': float(np.max(val_d_mse)),
+            'values': val_d_mse
+        },
+        'val_f_percent_mse': {
+            'mean': float(np.mean(val_f_mse)),
+            'std': float(np.std(val_f_mse)),
+            'min': float(np.min(val_f_mse)),
+            'max': float(np.max(val_f_mse)),
+            'values': val_f_mse
+        },
+        'train_s_percent_mse': {
+            'mean': float(np.mean(train_s_mse)),
+            'std': float(np.std(train_s_mse)),
+            'min': float(np.min(train_s_mse)),
+            'max': float(np.max(train_s_mse)),
+            'values': train_s_mse
+        },
+        'train_p_percent_mse': {
+            'mean': float(np.mean(train_p_mse)),
+            'std': float(np.std(train_p_mse)),
+            'min': float(np.min(train_p_mse)),
+            'max': float(np.max(train_p_mse)),
+            'values': train_p_mse
+        },
+        'train_d_percent_mse': {
+            'mean': float(np.mean(train_d_mse)),
+            'std': float(np.std(train_d_mse)),
+            'min': float(np.min(train_d_mse)),
+            'max': float(np.max(train_d_mse)),
+            'values': train_d_mse
+        },
+        'train_f_percent_mse': {
+            'mean': float(np.mean(train_f_mse)),
+            'std': float(np.std(train_f_mse)),
+            'min': float(np.min(train_f_mse)),
+            'max': float(np.max(train_f_mse)),
+            'values': train_f_mse
         }
     }
     
@@ -757,6 +865,22 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
                 'train_energy_mae': to_python_float(results['train_metrics']['energy'][-1]['mae']),
                 'val_energy_mse': to_python_float(results['val_metrics']['energy'][-1]['mse']),
                 'val_energy_mae': to_python_float(results['val_metrics']['energy'][-1]['mae']),
+                'train_s_percent_mse': to_python_float(results['train_metrics']['s_percent'][-1]['mse']),
+                'train_s_percent_mae': to_python_float(results['train_metrics']['s_percent'][-1]['mae']),
+                'val_s_percent_mse': to_python_float(results['val_metrics']['s_percent'][-1]['mse']),
+                'val_s_percent_mae': to_python_float(results['val_metrics']['s_percent'][-1]['mae']),
+                'train_p_percent_mse': to_python_float(results['train_metrics']['p_percent'][-1]['mse']),
+                'train_p_percent_mae': to_python_float(results['train_metrics']['p_percent'][-1]['mae']),
+                'val_p_percent_mse': to_python_float(results['val_metrics']['p_percent'][-1]['mse']),
+                'val_p_percent_mae': to_python_float(results['val_metrics']['p_percent'][-1]['mae']),
+                'train_d_percent_mse': to_python_float(results['train_metrics']['d_percent'][-1]['mse']),
+                'train_d_percent_mae': to_python_float(results['train_metrics']['d_percent'][-1]['mae']),
+                'val_d_percent_mse': to_python_float(results['val_metrics']['d_percent'][-1]['mse']),
+                'val_d_percent_mae': to_python_float(results['val_metrics']['d_percent'][-1]['mae']),
+                'train_f_percent_mse': to_python_float(results['train_metrics']['f_percent'][-1]['mse']),
+                'train_f_percent_mae': to_python_float(results['train_metrics']['f_percent'][-1]['mae']),
+                'val_f_percent_mse': to_python_float(results['val_metrics']['f_percent'][-1]['mse']),
+                'val_f_percent_mae': to_python_float(results['val_metrics']['f_percent'][-1]['mae']),
             }
         }
         combined_results['fold_results'].append(fold_result)
@@ -777,9 +901,17 @@ def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[D
         'val_occupation_mse': 'Val Occupation MSE',
         'val_kei_bo_mse': 'Val KEI-BO MSE',
         'val_energy_mse': 'Val Energy MSE',
+        'val_s_percent_mse': 'Val s% MSE',
+        'val_p_percent_mse': 'Val p% MSE',
+        'val_d_percent_mse': 'Val d% MSE',
+        'val_f_percent_mse': 'Val f% MSE',
         'train_occupation_mse': 'Train Occupation MSE',
         'train_kei_bo_mse': 'Train KEI-BO MSE',
         'train_energy_mse': 'Train Energy MSE',
+        'train_s_percent_mse': 'Train s% MSE',
+        'train_p_percent_mse': 'Train p% MSE',
+        'train_d_percent_mse': 'Train d% MSE',
+        'train_f_percent_mse': 'Train f% MSE',
     }
     
     for key, name in metrics_names.items():

@@ -9,7 +9,7 @@ metric:
 parameters:
   # Validation configuration
   validation_method:
-    values: ['random_split', 'per_molecule', 'per_element']
+    value: 'all'
   
   validation_subset:
     value: ['H', 'C', 'F', 'b2', 'h2o', 'lic']  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']

@@ -493,13 +493,12 @@ def main():
                 )
                 
                 # Generate validation report
-                save_detailed_orbital_validation_report(
-                    trainer.model, val_loader, fold_info, trainer.device, run_dir, fold_num + 1, normalizer
+                report_path = save_detailed_orbital_validation_report(
+                    trainer.model, val_loader, fold_info, trainer.device, run_dir, fold_num + 1, normalizer, validation_mode
                 )
                 
                 # Log validation report to WandB as an artifact
                 if is_sweep and config['wandb']['enabled']:
-                    report_path = os.path.join(run_dir, f"fold_{fold_num + 1:02d}_{fold_info['validation_folder']}_orbital_validation.txt")
                     if os.path.exists(report_path):
                         wandb.save(report_path, base_path=run_dir)
                 
@@ -566,11 +565,15 @@ def main():
             create_summary_plots(all_results, run_dir, summary_folder_names)
             save_combined_orbital_results(all_results, all_fold_info, config, run_dir)
             
-            # Log combined results JSON to WandB
+            # Log combined results JSON to WandB with validation mode in filename
             if is_sweep and config['wandb']['enabled']:
-                results_json_path = os.path.join(run_dir, 'orbital_results.json')
-                if os.path.exists(results_json_path):
-                    wandb.save(results_json_path, base_path=run_dir)
+                # Save with validation mode prefix
+                src_path = os.path.join(run_dir, 'orbital_results.json')
+                dest_path = os.path.join(run_dir, f'{validation_mode}_orbital_results.json')
+                if os.path.exists(src_path):
+                    import shutil
+                    shutil.copy(src_path, dest_path)
+                    wandb.save(dest_path, base_path=run_dir)
         
         # After all validation modes complete:
         # Compute overall average across all validation modes

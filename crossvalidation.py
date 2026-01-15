@@ -583,18 +583,15 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
     report.append("-" * 40)
     report.append(f"Orbital Occupations:")
     report.append(f"  MSE: {occupation_metrics['mse']:.6f}")
-    report.append(f"  MAE: {occupation_metrics['mae']:.6f}")
     report.append(f"KEI-BO Interactions:")
     report.append(f"  MSE: {kei_bo_metrics['mse']:.6f}")
-    report.append(f"  MAE: {kei_bo_metrics['mae']:.6f}")
     report.append(f"Molecular Energy:")
     report.append(f"  MSE: {energy_metrics['mse']:.6f}")
-    report.append(f"  MAE: {energy_metrics['mae']:.6f}")
     report.append(f"Hybridization Percentages:")
-    report.append(f"  s%: MSE={s_metrics['mse']:.6f}, MAE={s_metrics['mae']:.6f}")
-    report.append(f"  p%: MSE={p_metrics['mse']:.6f}, MAE={p_metrics['mae']:.6f}")
-    report.append(f"  d%: MSE={d_metrics['mse']:.6f}, MAE={d_metrics['mae']:.6f}")
-    report.append(f"  f%: MSE={f_metrics['mse']:.6f}, MAE={f_metrics['mae']:.6f}")
+    report.append(f"  s%: MSE={s_metrics['mse']:.6f}")
+    report.append(f"  p%: MSE={p_metrics['mse']:.6f}")
+    report.append(f"  d%: MSE={d_metrics['mse']:.6f}")
+    report.append(f"  f%: MSE={f_metrics['mse']:.6f}")
     report.append("")
     report.append("MOLECULE-BY-MOLECULE ORBITAL ANALYSIS")
     report.append("=" * 80)
@@ -627,8 +624,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                          f"{mol['occupation_preds'][i]:10.6f} {mol['occupation_targets'][i]:10.6f} "
                          f"{occupation_abs_errors[i]:10.6f}")
         
-        occupation_mae = np.mean(occupation_abs_errors)
-        report.append(f"Occupation MAE: {occupation_mae:.6f}")
+        occupation_mse = np.mean(occupation_abs_errors ** 2)
+        report.append(f"Occupation MSE: {occupation_mse:.6f}")
         report.append("")
         
         # Hybridization analysis
@@ -648,11 +645,11 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                          f"{mol['d_preds'][i]:9.4f} {mol['d_targets'][i]:9.4f} "
                          f"{mol['f_preds'][i]:9.4f} {mol['f_targets'][i]:9.4f}")
         
-        s_mae = np.mean(s_abs_errors)
-        p_mae = np.mean(p_abs_errors)
-        d_mae = np.mean(d_abs_errors)
-        f_mae = np.mean(f_abs_errors)
-        report.append(f"Hybridization MAE: s={s_mae:.6f}, p={p_mae:.6f}, d={d_mae:.6f}, f={f_mae:.6f}")
+        s_mse = np.mean(s_abs_errors ** 2)
+        p_mse = np.mean(p_abs_errors ** 2)
+        d_mse = np.mean(d_abs_errors ** 2)
+        f_mse = np.mean(f_abs_errors ** 2)
+        report.append(f"Hybridization MSE: s={s_mse:.6f}, p={p_mse:.6f}, d={d_mse:.6f}, f={f_mse:.6f}")
         report.append("")
         
         # KEI-BO interaction analysis
@@ -675,8 +672,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
                 report.append(f"{i+1:5d} {orb1:3d}-{orb2:<3d} {distance:9.3f} "
                              f"{predicted:10.6f} {target:10.6f} {abs_error:10.6f}")
             
-            kei_bo_mae = np.mean(kei_bo_abs_errors)
-            report.append(f"KEI-BO MAE: {kei_bo_mae:.6f}")
+            kei_bo_mse = np.mean(kei_bo_abs_errors ** 2)
+            report.append(f"KEI-BO MSE: {kei_bo_mse:.6f}")
         else:
             report.append("No KEI-BO interactions found for this molecule.")
         
@@ -687,15 +684,21 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
 
 def save_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val_loader: DataLoader, 
                                           fold_info: Dict, device: torch.device, 
-                                          run_dir: str, fold_num: int, normalizer=None):
+                                          run_dir: str, fold_num: int, normalizer=None, validation_mode: str = None):
     """Save detailed orbital validation report to text file."""
     report = generate_detailed_orbital_validation_report(model, val_loader, fold_info, device, normalizer)
     
-    report_path = os.path.join(run_dir, f"fold_{fold_num:02d}_{fold_info['validation_folder']}_orbital_validation.txt")
+    # Include validation_mode in filename if provided
+    if validation_mode:
+        report_path = os.path.join(run_dir, f"{validation_mode}_fold_{fold_num:02d}_{fold_info['validation_folder']}_orbital_validation.txt")
+    else:
+        report_path = os.path.join(run_dir, f"fold_{fold_num:02d}_{fold_info['validation_folder']}_orbital_validation.txt")
+    
     with open(report_path, 'w') as f:
         f.write(report)
     
     print(f"Detailed orbital validation report saved to {report_path}")
+    return report_path
 
 
 def save_combined_orbital_results(all_results: List[Dict], all_fold_info: List[Dict], config: Dict, run_dir: str):

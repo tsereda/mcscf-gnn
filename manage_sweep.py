@@ -3,10 +3,10 @@
 MCSCF-GNN Training Management - Kubernetes Jobs
 
 Usage:
-    python manage_training.py                      # Print help
-    python manage_training.py --create             # Create sweep + deploy 1 job
-    python manage_training.py --create --num 8     # Create sweep + deploy 8 jobs
-    python manage_training.py --deploy SWEEP_ID    # Deploy jobs for existing sweep
+    python manage_sweep.py                      # Print help
+    python manage_sweep.py sweep.yml            # Create sweep + deploy 1 agent
+    python manage_sweep.py sweep.yml --agents 8 # Create sweep + deploy 8 agents
+    python manage_sweep.py --deploy SWEEP_ID    # Deploy agents for existing sweep
 """
 
 import os
@@ -30,18 +30,12 @@ def load_sweep_config(config_path):
         sys.exit(1)
 
 
-def create_sweep(config_path, entity=None, project=None):
+def create_sweep(config_path):
     """Create a new wandb sweep and return sweep ID"""
     config = load_sweep_config(config_path)
     
-    # Override entity/project if provided
-    if entity:
-        config['entity'] = entity
-    if project:
-        config['project'] = project
-    
-    entity = entity or config.get('entity', 'timgsereda')
-    project = project or config.get('project', 'gamess-gnn-sweep')
+    entity = config.get('entity', 'timgsereda')
+    project = config.get('project', 'gamess-gnn-sweep')
     
     print(f"\nCreating W&B sweep in {entity}/{project}")
     
@@ -216,46 +210,32 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create sweep + deploy 1 job
-  python manage_training.py --create
+  # Create sweep + deploy 1 agent
+  python manage_sweep.py sweep.yml
   
-  # Create sweep + deploy 8 jobs
-  python manage_training.py --create --num 8
+  # Create sweep + deploy 8 agents
+  python manage_sweep.py sweep.yml --agents 8
   
-  # Deploy jobs to existing sweep
-  python manage_training.py --deploy dnffyu6j
-  
-  # Custom entity/project
-  python manage_training.py --entity myteam --project myproject
+  # Deploy agents to existing sweep
+  python manage_sweep.py --deploy dnffyu6j
 
 Tip:
   kubectl get jobs -l app=wandb-sweep
   kubectl logs -f job/mcscf-gnn-sweep-1
-  python manage_training.py --delete
+  python manage_sweep.py --delete
         """
     )
     
-    parser.add_argument('--create', action='store_true',
-                       help='Create sweep and deploy jobs')
+    parser.add_argument('sweep_file', nargs='?',
+                       help='Path to sweep configuration file')
+    parser.add_argument('--agents', type=int, default=1,
+                       help='Number of agents to deploy (default: 1)')
     parser.add_argument('--deploy', type=str, metavar='SWEEP_ID',
-                       help='Deploy jobs for existing sweep ID')
+                       help='Deploy agents for existing sweep ID')
     parser.add_argument('--delete', action='store_true',
                        help='Delete all wandb sweep jobs')
-    parser.add_argument('--num', type=int, default=1,
-                       help='Number of jobs to deploy (default: 1)')
-    parser.add_argument('--entity', type=str, default='timgsereda',
-                       help='W&B entity (default: timgsereda)')
-    parser.add_argument('--project', type=str, default='gamess-gnn-sweep',
-                       help='W&B project (default: gamess-gnn-sweep)')
-    parser.add_argument('sweep_file', nargs='?', default='sweep.yml',
-                       help='Path to sweep configuration file (default: sweep.yml)')
     
     args = parser.parse_args()
-    
-    # If no action specified, print help
-    if not args.create and not args.deploy and not args.delete:
-        parser.print_help()
-        sys.exit(0)
     
     # Handle deletion
     if args.delete:
@@ -263,6 +243,11 @@ Tip:
         print("MCSCF-GNN Training Management - Delete Jobs")
         print("=" * 70)
         delete_jobs()
+        sys.exit(0)
+    
+    # If no action specified, print help
+    if not args.sweep_file and not args.deploy:
+        parser.print_help()
         sys.exit(0)
     
     print("=" * 70)
@@ -273,25 +258,30 @@ Tip:
     if args.deploy:
         sweep_id = args.deploy
         print(f"\nUsing existing sweep: {sweep_id}")
-    elif args.create:
+        # Load config to get entity/project for job generation
+        config = load_sweep_config('sweep.yml')
+        entity = config.get('entity', 'timgsereda')
+        project = config.get('project', 'gamess-gnn-sweep')
+    elif args.sweep_file:
         print("\n[Step 1/3] Creating W&B sweep...")
-        sweep_id = create_sweep(
-            config_path=args.sweep_file,
-            entity=args.entity, 
-            project=args.project
-        )
+        sweep_id = create_sweep(config_path=args.sweep_file)
         
         if not sweep_id:
             print("Error: Failed to create sweep. Aborting...")
             sys.exit(1)
+        
+        # Get entity/project from the config that was just loaded
+        config = load_sweep_config(args.sweep_file)
+        entity = config.get('entity', 'timgsereda')
+        project = config.get('project', 'gamess-gnn-sweep')
     
     # Generate job YAMLs
-    print(f"\n[Step 2/3] Generating {args.num} Kubernetes job YAMLs...")
+    print(f"\n[Step 2/3] Generating {args.agents} Kubernetes job YAMLs...")
     job_files = generate_job_yamls(
         sweep_id=sweep_id,
-        entity=args.entity,
-        project=args.project,
-        num_jobs=args.num
+        entity=entity,
+        project=project,
+        num_jobs=args.agents
     )
     
     print(f"\nJob YAMLs saved to: k8s/training_jobs/")
@@ -305,19 +295,18 @@ Tip:
     print("=" * 70)
     
     print(f"\nSweep ID: {sweep_id}")
-    print(f"View at: https://wandb.ai/{args.entity}/{args.project}/sweeps/{sweep_id}")
+    print(f"View at: https://wandb.ai/{entity}/{project}/sweeps/{sweep_id}")
     
-    print(f"\nMonitor jobs:")
     print(f"\nMonitor jobs:")
     print(f"  kubectl get jobs -l app=wandb-sweep")
     print(f"\nCheck logs (examples):")
-    for i in range(1, min(3, args.num + 1)):
+    for i in range(1, min(3, args.agents + 1)):
         print(f"  kubectl logs -f job/mcscf-gnn-sweep-{i}")
-    if args.num > 2:
-        print(f"  ... (jobs 1-{args.num})")
+    if args.agents > 2:
+        print(f"  ... (jobs 1-{args.agents})")
     
     print(f"\nDelete all jobs:")
-    print(f"  python manage_training.py --delete")
+    print(f"  python manage_sweep.py --delete")
 
 if __name__ == "__main__":
     main()

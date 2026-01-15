@@ -3,8 +3,9 @@
 MCSCF-GNN Training Management - Kubernetes Jobs
 
 Usage:
-    python manage_training.py                      # Create sweep + deploy 4 jobs
-    python manage_training.py --num 8              # Create sweep + deploy 8 jobs
+    python manage_training.py                      # Print help
+    python manage_training.py --create             # Create sweep + deploy 1 job
+    python manage_training.py --create --num 8     # Create sweep + deploy 8 jobs
     python manage_training.py --deploy SWEEP_ID    # Deploy jobs for existing sweep
 """
 
@@ -215,11 +216,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create sweep + deploy 4 jobs
-  python manage_training.py
+  # Create sweep + deploy 1 job
+  python manage_training.py --create
   
   # Create sweep + deploy 8 jobs
-  python manage_training.py --num 8
+  python manage_training.py --create --num 8
   
   # Deploy jobs to existing sweep
   python manage_training.py --deploy dnffyu6j
@@ -234,12 +235,14 @@ Tip:
         """
     )
     
+    parser.add_argument('--create', action='store_true',
+                       help='Create sweep and deploy jobs')
     parser.add_argument('--deploy', type=str, metavar='SWEEP_ID',
                        help='Deploy jobs for existing sweep ID')
     parser.add_argument('--delete', action='store_true',
                        help='Delete all wandb sweep jobs')
-    parser.add_argument('--num', type=int, default=4,
-                       help='Number of jobs to deploy (default: 4)')
+    parser.add_argument('--num', type=int, default=1,
+                       help='Number of jobs to deploy (default: 1)')
     parser.add_argument('--entity', type=str, default='timgsereda',
                        help='W&B entity (default: timgsereda)')
     parser.add_argument('--project', type=str, default='gamess-gnn-sweep',
@@ -248,6 +251,11 @@ Tip:
                        help='Path to sweep configuration file (default: sweep.yml)')
     
     args = parser.parse_args()
+    
+    # If no action specified, print help
+    if not args.create and not args.deploy and not args.delete:
+        parser.print_help()
+        sys.exit(0)
     
     # Handle deletion
     if args.delete:
@@ -265,7 +273,7 @@ Tip:
     if args.deploy:
         sweep_id = args.deploy
         print(f"\nUsing existing sweep: {sweep_id}")
-    else:
+    elif args.create:
         print("\n[Step 1/3] Creating W&B sweep...")
         sweep_id = create_sweep(
             config_path=args.sweep_file,

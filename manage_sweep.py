@@ -25,7 +25,7 @@ def load_sweep_config(config_path):
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
     except FileNotFoundError:
-        print(f"❌ Error: {config_path} not found!")
+        print(f"Error: {config_path} not found!")
         sys.exit(1)
 
 
@@ -54,7 +54,7 @@ def create_sweep(config_path, entity=None, project=None):
         return sweep_id
         
     except Exception as e:
-        print(f"❌ Error creating sweep: {e}")
+        print(f"Error creating sweep: {e}")
         return None
 
 
@@ -71,7 +71,7 @@ def generate_job_yamls(sweep_id, entity, project, output_dir="k8s/training_jobs"
         with open(template_path, 'r') as f:
             template_yaml = yaml.safe_load(f)
     except FileNotFoundError:
-        print(f"❌ Error: Template file '{template_path}' not found!")
+        print(f"Error: Template file '{template_path}' not found!")
         sys.exit(1)
     
     os.makedirs(output_dir, exist_ok=True)

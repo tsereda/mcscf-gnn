@@ -226,7 +226,7 @@ def prepare_random_split_data(all_files: List[str],
     if len(train_graphs) == 0:
         raise ValueError("No valid training graphs for random split")
     if len(val_graphs) == 0:
-        print(f"    ⚠️ No valid validation graphs, using copy of first training graph")
+        print(f"    Warning: No valid validation graphs, using copy of first training graph")
         val_graphs = [train_graphs[0]]
     
     # Create data loaders
@@ -305,7 +305,7 @@ def prepare_element_based_fold_data(all_files: List[str],
     if len(train_graphs) == 0:
         raise ValueError(f"No valid training graphs for element-based fold {fold_num} (element: {target_element})")
     if len(val_graphs) == 0:
-        print(f"    ⚠️ No valid validation graphs for element {target_element}, using copy of first training graph")
+        print(f"    Warning: No valid validation graphs for element {target_element}, using copy of first training graph")
         val_graphs = [train_graphs[0]]
     
     # Create data loaders
@@ -376,7 +376,7 @@ def prepare_single_fold_data(folder_files: Dict[str, List[str]],
     if len(train_graphs) == 0:
         raise ValueError(f"No valid training graphs for fold with validation folder: {validation_folder}")
     if len(val_graphs) == 0:
-        print(f"    ⚠️ No valid validation graphs, using copy of first training graph")
+        print(f"    Warning: No valid validation graphs, using copy of first training graph")
         val_graphs = [train_graphs[0]]
     
     # Create data loaders
@@ -602,7 +602,8 @@ def generate_detailed_orbital_validation_report(model: OrbitalTripleTaskGNN, val
         for i in range(mol['num_orbitals']):
             features = mol['orbital_features'][i]
             atomic_num = int(features[0])
-            orb_type = int(features[1])
+            # Handle variable feature dimensions: [atomic_num] or [atomic_num, orb_type] or [atomic_num, orb_type, m_quantum]
+            orb_type = int(features[1]) if len(features) > 1 else -1  # -1 indicates not available
             
             report.append(f"{i+1:4d} {atomic_num:9d} {orb_type:7d} "
                          f"{mol['occupation_preds'][i]:10.6f} {mol['occupation_targets'][i]:10.6f} "

@@ -3,7 +3,7 @@ method: bayes
 project: gamess-gnn-sweep
 
 metric:
-  name: avg_val_kei_bo_mse
+  name: overall/avg_val_kei_bo_mse
   goal: minimize
 
 parameters:

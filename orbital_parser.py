@@ -62,9 +62,24 @@ class OrbitalGAMESSParser:
         return data
     
     def _extract_mcscf_energy(self, content: str) -> Optional[float]:
-        """Extract the FINAL MCSCF ENERGY from GAMESS output"""
+        """Extract the FINAL ENERGY (MCSCF or Standard SCF) from GAMESS output"""
+        # 1. Try explicit MCSCF Energy (for your multireference files)
         match = re.search(r"FINAL MCSCF ENERGY IS\s+([-+]?\d+\.\d+)", content)
-        return float(match.group(1)) if match else None
+        if match:
+            return float(match.group(1))
+
+        # 2. Try Standard GAMESS Total Energy (for Hartree-Fock files)
+        # Matches "TOTAL ENERGY = -40.123..."
+        match = re.search(r"TOTAL ENERGY\s+=\s+([-+]?\d+\.\d+)", content)
+        if match:
+            return float(match.group(1))
+        
+        # 3. Fallback for other formats (like Gaussian "SCF Done")
+        match = re.search(r"(?:SCF Done:|E\\(RHF\\) =)\s+([-+]?\d+\.\d+)", content)
+        if match: 
+            return float(match.group(1))
+
+        return None
     
     def _extract_coordinates(self, content: str) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Extract atomic coordinates and symbols (always in BOHR units)"""
@@ -89,9 +104,29 @@ class OrbitalGAMESSParser:
         return (np.array(coords), atoms) if len(coords) >= self.min_atoms else (None, None)
 
     def _extract_density_matrix(self, content: str) -> Optional[np.ndarray]:
-        """Extract the full density matrix"""
-        match = re.search(r'ORIGINAL ORIENTED DENSITY MATRIX\s+(.*?)(?=\n\s*MULTIPLY|\n\s*\n\s*[A-Z]|$)', content, re.DOTALL)
-        return self._parse_matrix(match.group(1)) if match else None
+        """Extract the density matrix (trying multiple common GAMESS headers)"""
+        # List of headers to look for, in order of preference
+        headers = [
+            # The header found in your successful MCSCF files
+            r'ORIGINAL ORIENTED DENSITY MATRIX',
+            # The header found in o-methane.log (Line 6378) - likely the most relevant for bonding
+            r'DENSITY MATRIX FOR QUASI-ATOMIC AND BONDING ORBITALS',
+            # Alternative from o-methane.log (Line 6266)
+            r'DENSITY MATRIX IN THE ORTHOGONAL QUASI-ATOMIC SVD MO BASIS',
+            # Standard generic fallback
+            r'TOTAL DENSITY MATRIX'
+        ]
+        
+        for header in headers:
+            # Construct regex: Header -> capture content -> stop at "MULTIPLY" or double newline
+            pattern = f'{header}\\s+(.*?)(?=\\n\\s*MULTIPLY|\\n\\s*\\n\\s*[A-Z]|$)'
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                if self.debug:
+                    print(f"  Found density matrix with header: '{header}'")
+                return self._parse_matrix(match.group(1))
+
+        return None
 
     def _parse_matrix(self, matrix_text: str) -> Optional[np.ndarray]:
         """Parse matrix from GAMESS output format"""

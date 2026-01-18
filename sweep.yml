@@ -9,6 +9,8 @@ metric:
   goal: minimize
 
 parameters:
+    use_physics_constraints:
+      values: [true, false]
   # Validation configuration
   validation_method:
     value: 'all'

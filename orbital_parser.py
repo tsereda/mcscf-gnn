@@ -409,27 +409,22 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
         try:
             data = parser.parse_gamess_file(filepath)
             successful.append(filepath)
-            
             atoms, coords = data['atoms'], data['coordinates']
             orbital_data = data['orbital_data']
             kei_bo_matrix = data['kei_bo_matrix']
             final_energy = data['final_mcscf_energy']
-            
             print(f"Atoms ({len(atoms)}):")
             for j, (atom, coord) in enumerate(zip(atoms, coords)):
                 print(f"  {j+1:2d} {atom:2s}: [{coord[0]:7.3f}, {coord[1]:7.3f}, {coord[2]:7.3f}] Å")
-            
             print(f"\nOrbitals ({len(orbital_data['orbital_features'])}):")
             for j, features in enumerate(orbital_data['orbital_features']):
                 parent_atom_idx = orbital_data['orbital_positions'][j]
                 atom_symbol = atoms[parent_atom_idx]
-                # Extract orbital info from stored data (not from features which are inputs)
                 orbital_type_val = orbital_data['orbital_types'][j]
                 orbital_type = ['S', 'P', 'D', 'F'][orbital_type_val]
                 m_quantum = orbital_data['orbital_m_quantum'][j]
                 occupation = orbital_data['orbital_occupations'][j]
                 print(f"  {j+1:2d} {atom_symbol}{parent_atom_idx+1}-{orbital_type}{m_quantum}: occ={occupation:.4f}")
-            
             print(f"\nSignificant KEI-BO orbital interactions:")
             count = 0
             for i in range(len(orbital_data['orbital_features'])):
@@ -441,14 +436,11 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
                             break
                 if count >= 10:
                     break
-            
             print(f"MCSCF Energy: {final_energy:.8f} hartree\n")
-                  
         except Exception as e:
             error_msg = str(e)
-            error_type = "Orbital parsing error"
-            
-            failed_by_type.setdefault(error_type, []).append(filename)
+            error_type = type(e).__name__
+            failed_by_type.setdefault(error_type, []).append((filename, error_msg))
             print(f"FAILED: {error_type} - {error_msg}\n")
     
     # Summary
@@ -462,6 +454,8 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
         print(f"Failed: {total_failed} files")
         for error_type, file_list in failed_by_type.items():
             print(f"  {error_type}: {len(file_list)} files")
+            for fname, emsg in file_list:
+                print(f"    - {fname}: {emsg}")
 
 
 def main():
@@ -483,7 +477,7 @@ def main():
             return
             
         print(f"\nFound {len(all_files)} total .log files across {len(folder_files)} folders")
-        analyze_orbital_files(all_files[:5])  # Analyze first 5 files for testing
+        analyze_orbital_files(all_files)  # Analyze first 5 files for testing
         
     except Exception as e:
         print(f"Error: {e}")

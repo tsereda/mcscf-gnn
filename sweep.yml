@@ -1,6 +1,4 @@
-parameters:
-  use_attention:
-    values: [true, false]
+
 program: main.py
 method: bayes
 project: gamess-gnn-sweep
@@ -10,9 +8,12 @@ metric:
   goal: minimize
 
 parameters:
+  use_attention:
+    values: [true, false]
+
   use_physics_constraints:
     values: [true, false]
-  # Validation configuration
+
   validation_method:
     value: 'all'
   
@@ -23,7 +24,7 @@ parameters:
     value: 0.2  # Only used for random_split method
   
   random_seed:
-    value: 42  # For reproducibility
+    value: 42 
   
   # Model and training parameters
   normalization_enabled:

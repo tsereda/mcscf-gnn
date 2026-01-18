@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import torch
 
-from orbital_gnn import create_orbital_model
+from orbital_gnn import create_orbital_model, create_orbital_model_with_attention
 from orbital_trainer import OrbitalTrainer, process_orbital_files
 from orbital_parser import OrbitalGAMESSParser
 from torch_geometric.data import DataLoader
@@ -73,7 +73,8 @@ def main():
             'num_rbf': 50,
             'rbf_cutoff': 5.0,
             'include_hybridization': True,
-            'include_m_quantum': True
+            'include_m_quantum': True,
+            'use_attention': True
         },
         'training': {
             'learning_rate': 0.0001,
@@ -85,7 +86,8 @@ def main():
             'kei_bo_weight': 2.0,
             'energy_weight': 0.1,
             'hybrid_weight': 1.0,
-            'use_uncertainty_weighting': True
+            'use_uncertainty_weighting': True,
+            'use_physics_constraints': True
         },
         'gradnorm': {
             'enabled': False,
@@ -99,10 +101,10 @@ def main():
         },
         'data': {
             'base_path': 'data',
-            'validation_mode': 'per_element',  # 'random_split', 'per_element', or 'per_molecule'
-            'validation_subset': None,  # None = all, or list like ['H', 'C'] or ['b2', 'h2o']
-            'val_split_ratio': 0.2,  # Only for random_split
-            'random_seed': 42  # For random_split reproducibility
+            'validation_mode': 'per_element',
+            'validation_subset': None,
+            'val_split_ratio': 0.2,
+            'random_seed': 42
         },
         'wandb': {
             'enabled': is_sweep,
@@ -147,6 +149,9 @@ def main():
             'epochs',
             config['training']['num_epochs']
         )
+        # Read sweep params for attention and physics constraints
+        config['model']['use_attention'] = getattr(wandb.config, 'use_attention', True)
+        config['training']['use_physics_constraints'] = getattr(wandb.config, 'use_physics_constraints', True)
         
         # RBF distance encoding parameters
         config['model']['use_rbf_distance'] = getattr(
@@ -442,21 +447,39 @@ def main():
                 if config['model']['include_m_quantum']:
                     orbital_input_dim += 1  # Add m_quantum
                 
-                model = create_orbital_model(
-                    orbital_input_dim=orbital_input_dim,
-                    hidden_dim=config['model']['hidden_dim'],
-                    num_layers=config['model']['num_layers'],
-                    dropout=config['model']['dropout'],
-                    global_pooling_method=config['model']['global_pooling_method'],
-                    orbital_embedding_dim=config['model']['orbital_embedding_dim'],
-                    use_rbf_distance=config['model']['use_rbf_distance'],
-                    num_rbf=config['model']['num_rbf'],
-                    rbf_cutoff=config['model']['rbf_cutoff'],
-                    include_hybridization=config['model']['include_hybridization'],
-                    include_orbital_type=config['model']['include_orbital_type'],
-                    include_m_quantum=config['model']['include_m_quantum'],
-                    use_element_baselines=config['model'].get('use_element_baselines', True)
-                )
+                if config['model'].get('use_attention', True):
+                    model = create_orbital_model_with_attention(
+                        orbital_input_dim=orbital_input_dim,
+                        hidden_dim=config['model']['hidden_dim'],
+                        num_layers=config['model']['num_layers'],
+                        dropout=config['model']['dropout'],
+                        global_pooling_method=config['model']['global_pooling_method'],
+                        orbital_embedding_dim=config['model']['orbital_embedding_dim'],
+                        use_rbf_distance=config['model']['use_rbf_distance'],
+                        num_rbf=config['model']['num_rbf'],
+                        rbf_cutoff=config['model']['rbf_cutoff'],
+                        include_hybridization=config['model']['include_hybridization'],
+                        include_orbital_type=config['model']['include_orbital_type'],
+                        include_m_quantum=config['model']['include_m_quantum'],
+                        use_element_baselines=config['model'].get('use_element_baselines', True),
+                        use_attention=True
+                    )
+                else:
+                    model = create_orbital_model(
+                        orbital_input_dim=orbital_input_dim,
+                        hidden_dim=config['model']['hidden_dim'],
+                        num_layers=config['model']['num_layers'],
+                        dropout=config['model']['dropout'],
+                        global_pooling_method=config['model']['global_pooling_method'],
+                        orbital_embedding_dim=config['model']['orbital_embedding_dim'],
+                        use_rbf_distance=config['model']['use_rbf_distance'],
+                        num_rbf=config['model']['num_rbf'],
+                        rbf_cutoff=config['model']['rbf_cutoff'],
+                        include_hybridization=config['model']['include_hybridization'],
+                        include_orbital_type=config['model']['include_orbital_type'],
+                        include_m_quantum=config['model']['include_m_quantum'],
+                        use_element_baselines=config['model'].get('use_element_baselines', True)
+                    )
                 
                 # Create trainer
                 trainer = OrbitalTrainer(
@@ -474,7 +497,8 @@ def main():
                     gradnorm_alpha=config['gradnorm']['alpha'],
                     gradnorm_lr=config['gradnorm']['learning_rate'],
                     use_first_epoch_weighting=config.get('use_first_epoch_weighting', False),
-                    wandb_enabled=is_sweep
+                    wandb_enabled=is_sweep,
+                    use_physics_constraints=config['training'].get('use_physics_constraints', True)
                 )
                 
                 # Train

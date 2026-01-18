@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 import os
 
 from orbital_gnn import OrbitalTripleTaskGNN, OrbitalMultiTaskLoss, compute_metrics
+from physics_loss import PhysicsInformedLoss
 from orbital_parser import OrbitalGAMESSParser
 from visualization import plot_training_curves
 from normalization import DataNormalizer
@@ -14,7 +15,6 @@ from gradnorm import GradNormLoss
 
 class OrbitalTrainer:
     """Trainer class for the orbital-centric triple-task GAMESS GNN"""
-    
     def __init__(self, model: OrbitalTripleTaskGNN,
                  learning_rate: float,
                  weight_decay: float,
@@ -29,7 +29,8 @@ class OrbitalTrainer:
                  gradnorm_lr: float = 0.025,
                  use_first_epoch_weighting: bool = False,
                  wandb_enabled: bool = False,
-                 device: str = None):
+                 device: str = None,
+                 use_physics_constraints: bool = True):
         
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
@@ -52,15 +53,25 @@ class OrbitalTrainer:
             initial_weights = [occupation_weight, kei_bo_weight, energy_weight]
             if self.include_hybridization:
                 initial_weights += [hybrid_weight, hybrid_weight, hybrid_weight, hybrid_weight]
-            
             self.loss_fn = GradNormLoss(
                 num_tasks=num_tasks,
                 alpha=gradnorm_alpha,
                 learning_rate=gradnorm_lr,
                 initial_weights=initial_weights
             )
-            self.loss_fn = self.loss_fn.to(device)  # Move loss function to device
+            self.loss_fn = self.loss_fn.to(device)
             print(f"Using GradNorm loss with {num_tasks} tasks (alpha={gradnorm_alpha}, lr={gradnorm_lr})")
+        elif use_physics_constraints:
+            self.loss_fn = PhysicsInformedLoss(
+                use_uncertainty_weighting=use_uncertainty_weighting,
+                occupation_weight=occupation_weight, 
+                kei_bo_weight=kei_bo_weight, 
+                energy_weight=energy_weight,
+                hybrid_weight=hybrid_weight,
+                include_hybridization=self.include_hybridization
+            )
+            self.loss_fn = self.loss_fn.to(device)
+            print(f"Using PhysicsInformedLoss (quantum constraints enabled)")
         else:
             self.loss_fn = OrbitalMultiTaskLoss(
                 use_uncertainty_weighting=use_uncertainty_weighting,
@@ -70,7 +81,7 @@ class OrbitalTrainer:
                 hybrid_weight=hybrid_weight,
                 include_hybridization=self.include_hybridization
             )
-            self.loss_fn = self.loss_fn.to(device)  # Move loss function to device
+            self.loss_fn = self.loss_fn.to(device)
             if use_uncertainty_weighting:
                 print(f"Using uncertainty weighting for {num_tasks} tasks (automatic balancing)")
             else:
@@ -165,6 +176,13 @@ class OrbitalTrainer:
                             *preds[:3], *targs[:3],
                             model_parameters=None,
                             update_weights=False
+                        )
+                    elif isinstance(self.loss_fn, PhysicsInformedLoss):
+                        # PhysicsInformedLoss needs edge_index and batch
+                        total_loss, loss_dict = self.loss_fn(
+                            *preds, *targs,
+                            edge_index=getattr(data, 'edge_index', None),
+                            batch=getattr(data, 'batch', None)
                         )
                     else:
                         total_loss, loss_dict = self.loss_fn(*preds, *targs)

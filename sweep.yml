@@ -1,3 +1,4 @@
+parameters:
   use_attention:
     values: [true, false]
 program: main.py
@@ -9,8 +10,8 @@ metric:
   goal: minimize
 
 parameters:
-    use_physics_constraints:
-      values: [true, false]
+  use_physics_constraints:
+    values: [true, false]
   # Validation configuration
   validation_method:
     value: 'all'

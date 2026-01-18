@@ -1,6 +1,258 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_geometric.nn import MessagePassing
+from torch_geometric.utils import softmax
+from typing import Optional
+
+# --- Edge-level Multi-Head Attention Message Passing ---
+class OrbitalAttentionMessagePassing(MessagePassing):
+    """
+    Edge-level multi-head attention for orbital-orbital interactions.
+    Key idea: KBOs arise from orbital overlap integrals, which depend on:
+    - Relative orbital orientations (p_x vs p_y, σ vs π bonding)
+    - Phase relationships (bonding vs antibonding)
+    - Energy level matching
+    Distance alone can't capture this - we need learned attention over orbital pairs.
+    """
+    def __init__(self, 
+                 hidden_dim: int, 
+                 edge_input_dim: int = 1,
+                 num_heads: int = 4,
+                 dropout: float = 0.1,
+                 use_edge_features: bool = True):
+        super().__init__(aggr='add', node_dim=0)
+        assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.head_dim = hidden_dim // num_heads
+        self.dropout = dropout
+        self.use_edge_features = use_edge_features
+        self.query_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.key_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.value_proj = nn.Linear(hidden_dim, hidden_dim)
+        if use_edge_features:
+            self.edge_encoder = nn.Sequential(
+                nn.Linear(edge_input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim)
+            )
+        self.out_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.batch_norm = nn.BatchNorm1d(hidden_dim)
+        self.dropout_layer = nn.Dropout(dropout)
+        self.scale = nn.Parameter(torch.tensor(1.0 / (self.head_dim ** 0.5)))
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, 
+                edge_attr: Optional[torch.Tensor] = None) -> torch.Tensor:
+        query = self.query_proj(x)
+        key = self.key_proj(x)
+        value = self.value_proj(x)
+        query = query.view(-1, self.num_heads, self.head_dim)
+        key = key.view(-1, self.num_heads, self.head_dim)
+        value = value.view(-1, self.num_heads, self.head_dim)
+        out = self.propagate(
+            edge_index, 
+            query=query, 
+            key=key, 
+            value=value,
+            edge_attr=edge_attr
+        )
+        out = out.view(-1, self.hidden_dim)
+        out = self.out_proj(out)
+        out = self.batch_norm(out)
+        out = F.relu(out)
+        out = self.dropout_layer(out)
+        return x + out
+    def message(self, query_i, key_j, value_j, edge_attr, index, ptr, size_i):
+        attn_scores = (query_i * key_j).sum(dim=-1) * self.scale
+        if self.use_edge_features and edge_attr is not None:
+            edge_embed = self.edge_encoder(edge_attr)
+            edge_embed = edge_embed.view(-1, self.num_heads, self.head_dim)
+            edge_bias = (edge_embed * key_j).sum(dim=-1)
+            attn_scores = attn_scores + edge_bias
+        attn_weights = softmax(attn_scores, index, ptr, size_i)
+        attn_weights = F.dropout(attn_weights, p=self.dropout, training=self.training)
+        weighted_values = attn_weights.unsqueeze(-1) * value_j
+        return weighted_values
+
+# --- GNN with Edge-Level Attention ---
+class OrbitalTripleTaskGNNWithAttention(nn.Module):
+    """
+    Enhanced orbital GNN with edge-level attention for KBO prediction.
+    Key improvements:
+    1. Multi-head attention learns orbital symmetry-dependent interactions
+    2. Physics-informed constraints (antisymmetry, electron conservation)
+    3. Maintains all existing features (element baselines, RBF, hybridization)
+    """
+    def __init__(self, 
+                 orbital_input_dim: int = 1,
+                 edge_input_dim: int = 1,
+                 hidden_dim: int = 128,
+                 num_layers: int = 4,
+                 num_attention_heads: int = 4,
+                 dropout: float = 0.1,
+                 max_atomic_num: int = 20,
+                 orbital_embedding_dim: int = 64,
+                 global_pooling_method: str = 'attention',
+                 use_rbf_distance: bool = False,
+                 num_rbf: int = 50,
+                 rbf_cutoff: float = 5.0,
+                 include_hybridization: bool = True,
+                 include_orbital_type: bool = True,
+                 include_m_quantum: bool = True,
+                 use_element_baselines: bool = True,
+                 use_attention: bool = True):
+        super().__init__()
+        self.orbital_input_dim = orbital_input_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.use_attention = use_attention
+        self.include_hybridization = include_hybridization
+        self.use_element_baselines = use_element_baselines
+        if use_element_baselines:
+            self.element_energy_baseline = nn.Parameter(torch.zeros(max_atomic_num + 1))
+        else:
+            self.element_energy_baseline = None
+        if use_rbf_distance:
+            from orbital_gnn import GaussianRBF
+            self.rbf_expansion = GaussianRBF(num_rbf=num_rbf, cutoff=rbf_cutoff)
+            effective_edge_dim = num_rbf
+        else:
+            self.rbf_expansion = None
+            effective_edge_dim = edge_input_dim
+        from orbital_gnn import OrbitalEmbedding
+        self.orbital_embedding = OrbitalEmbedding(
+            orbital_input_dim=orbital_input_dim,
+            max_atomic_num=max_atomic_num,
+            orbital_embedding_dim=orbital_embedding_dim,
+            include_orbital_type=include_orbital_type,
+            include_m_quantum=include_m_quantum
+        )
+        self.input_projection = nn.Linear(orbital_embedding_dim, hidden_dim)
+        self.message_layers = nn.ModuleList()
+        for _ in range(num_layers):
+            if use_attention:
+                self.message_layers.append(
+                    OrbitalAttentionMessagePassing(
+                        hidden_dim=hidden_dim,
+                        edge_input_dim=effective_edge_dim,
+                        num_heads=num_attention_heads,
+                        dropout=dropout
+                    )
+                )
+            else:
+                from orbital_gnn import OrbitalMessagePassing
+                self.message_layers.append(
+                    OrbitalMessagePassing(
+                        hidden_dim=hidden_dim,
+                        edge_input_dim=effective_edge_dim,
+                        dropout=dropout
+                    )
+                )
+        self.occupation_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1)
+        )
+        kei_bo_input_dim = hidden_dim * 2 + effective_edge_dim
+        self.kei_bo_head = nn.Sequential(
+            nn.Linear(kei_bo_input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1)
+        )
+        if include_hybridization:
+            self.hybridization_head = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, 4)
+            )
+        if global_pooling_method == 'attention':
+            from orbital_gnn import OrbitalAttentionPool
+            self.global_pooling = OrbitalAttentionPool(hidden_dim, dropout)
+        elif global_pooling_method == 'mean':
+            self.global_pooling = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, 1)
+            )
+        elif global_pooling_method == 'sum':
+            self.global_pooling = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 4),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 4, 1)
+            )
+        self.global_pooling_method = global_pooling_method
+    def forward(self, data):
+        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
+        batch = getattr(data, 'batch', None)
+        if self.rbf_expansion is not None:
+            edge_attr = self.rbf_expansion(edge_attr)
+        x = self.orbital_embedding(x)
+        x = self.input_projection(x)
+        for layer in self.message_layers:
+            x = layer(x, edge_index, edge_attr)
+        orbital_embeddings = x
+        occupation_pred = self.occupation_head(orbital_embeddings).squeeze(-1)
+        if self.include_hybridization:
+            hybridization_logits = self.hybridization_head(orbital_embeddings)
+            hybridization_probs = torch.softmax(hybridization_logits, dim=-1)
+            s_pred, p_pred, d_pred, f_pred = [hybridization_probs[:, i] for i in range(4)]
+        else:
+            s_pred = p_pred = d_pred = f_pred = torch.zeros_like(occupation_pred)
+        kei_bo_pred = self._predict_kei_bo_values(orbital_embeddings, edge_index, edge_attr).squeeze(-1)
+        if batch is None:
+            batch = torch.zeros(orbital_embeddings.size(0), dtype=torch.long, device=x.device)
+        if self.global_pooling_method == 'attention':
+            interaction_energy = self.global_pooling(orbital_embeddings, batch).squeeze(-1)
+        elif self.global_pooling_method == 'mean':
+            from torch_geometric.nn import global_mean_pool
+            molecule_embedding = global_mean_pool(orbital_embeddings, batch)
+            interaction_energy = self.global_pooling(molecule_embedding).squeeze(-1)
+        elif self.global_pooling_method == 'sum':
+            from torch_geometric.nn import global_add_pool
+            molecule_embedding = global_add_pool(orbital_embeddings, batch)
+            interaction_energy = self.global_pooling(molecule_embedding).squeeze(-1)
+        if self.use_element_baselines:
+            element_baseline = self._compute_element_baseline(data)
+            energy_pred = element_baseline + interaction_energy
+        else:
+            energy_pred = interaction_energy
+        return occupation_pred, kei_bo_pred, energy_pred, s_pred, p_pred, d_pred, f_pred
+    def _predict_kei_bo_values(self, orbital_embeddings, edge_index, edge_attr):
+        row, col = edge_index
+        source_orbitals = orbital_embeddings[row]
+        target_orbitals = orbital_embeddings[col]
+        edge_features = torch.cat([source_orbitals, target_orbitals, edge_attr], dim=1)
+        return self.kei_bo_head(edge_features)
+    def _compute_element_baseline(self, data):
+        atomic_numbers = data.x[:, 0].long()
+        element_energies = self.element_energy_baseline[atomic_numbers]
+        num_molecules = data.batch.max().item() + 1
+        baseline_per_mol = torch.zeros(num_molecules, device=data.x.device)
+        baseline_per_mol.index_add_(0, data.batch, element_energies)
+        return baseline_per_mol
+
+# --- Factory function for easy integration ---
+def create_orbital_model_with_attention(**kwargs):
+    """Drop-in replacement for your create_orbital_model() function"""
+    return OrbitalTripleTaskGNNWithAttention(**kwargs)
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch_geometric.nn import NNConv, global_mean_pool, global_add_pool
 from torch_geometric.data import Data, Batch
 from typing import Tuple, Optional

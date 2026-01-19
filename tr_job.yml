@@ -60,12 +60,12 @@ spec:
         
           resources:
             requests:
-              memory: 25Gi
-              cpu: "15"
+              memory: 10Gi
+              cpu: "10"
               nvidia.com/a100: "1"
             limits:
-              memory: 30Gi
-              cpu: "18"
+              memory: 12Gi
+              cpu: "12"
               nvidia.com/a100: "1"
     
       volumes:

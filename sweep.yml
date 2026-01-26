@@ -8,8 +8,6 @@ metric:
   goal: minimize
 
 parameters:
-  use_attention:
-    values: [true, false]
 
   use_physics_constraints:
     values: [true, false]

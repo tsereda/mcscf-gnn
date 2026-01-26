@@ -8,3 +8,5 @@ impplan.md
 .gitignore
 analysisfilesoct25/files.zip
 k8s/training_jobs/
+wandb_export_2026-01-25T21_24_38.674-06_00.csv
+paper_outputs/

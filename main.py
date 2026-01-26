@@ -149,8 +149,12 @@ def main():
             'epochs',
             config['training']['num_epochs']
         )
-        # Read sweep params for attention and physics constraints
-        config['model']['use_attention'] = getattr(wandb.config, 'use_attention', True)
+        # Read sweep params for aggregation method and physics constraints
+        config['model']['aggregation_method'] = getattr(
+            wandb.config,
+            'aggregation_method',
+            'attention'  # default
+        )
         config['training']['use_physics_constraints'] = getattr(wandb.config, 'use_physics_constraints', True)
         
         # RBF distance encoding parameters
@@ -447,39 +451,22 @@ def main():
                 if config['model']['include_m_quantum']:
                     orbital_input_dim += 1  # Add m_quantum
                 
-                if config['model'].get('use_attention', True):
-                    model = create_orbital_model_with_attention(
-                        orbital_input_dim=orbital_input_dim,
-                        hidden_dim=config['model']['hidden_dim'],
-                        num_layers=config['model']['num_layers'],
-                        dropout=config['model']['dropout'],
-                        global_pooling_method=config['model']['global_pooling_method'],
-                        orbital_embedding_dim=config['model']['orbital_embedding_dim'],
-                        use_rbf_distance=config['model']['use_rbf_distance'],
-                        num_rbf=config['model']['num_rbf'],
-                        rbf_cutoff=config['model']['rbf_cutoff'],
-                        include_hybridization=config['model']['include_hybridization'],
-                        include_orbital_type=config['model']['include_orbital_type'],
-                        include_m_quantum=config['model']['include_m_quantum'],
-                        use_element_baselines=config['model'].get('use_element_baselines', True),
-                        use_attention=True
-                    )
-                else:
-                    model = create_orbital_model(
-                        orbital_input_dim=orbital_input_dim,
-                        hidden_dim=config['model']['hidden_dim'],
-                        num_layers=config['model']['num_layers'],
-                        dropout=config['model']['dropout'],
-                        global_pooling_method=config['model']['global_pooling_method'],
-                        orbital_embedding_dim=config['model']['orbital_embedding_dim'],
-                        use_rbf_distance=config['model']['use_rbf_distance'],
-                        num_rbf=config['model']['num_rbf'],
-                        rbf_cutoff=config['model']['rbf_cutoff'],
-                        include_hybridization=config['model']['include_hybridization'],
-                        include_orbital_type=config['model']['include_orbital_type'],
-                        include_m_quantum=config['model']['include_m_quantum'],
-                        use_element_baselines=config['model'].get('use_element_baselines', True)
-                    )
+                model = create_orbital_model(
+                    orbital_input_dim=orbital_input_dim,
+                    hidden_dim=config['model']['hidden_dim'],
+                    num_layers=config['model']['num_layers'],
+                    dropout=config['model']['dropout'],
+                    global_pooling_method=config['model']['global_pooling_method'],
+                    orbital_embedding_dim=config['model']['orbital_embedding_dim'],
+                    use_rbf_distance=config['model']['use_rbf_distance'],
+                    num_rbf=config['model']['num_rbf'],
+                    rbf_cutoff=config['model']['rbf_cutoff'],
+                    include_hybridization=config['model']['include_hybridization'],
+                    include_orbital_type=config['model']['include_orbital_type'],
+                    include_m_quantum=config['model']['include_m_quantum'],
+                    use_element_baselines=config['model'].get('use_element_baselines', True),
+                    aggregation_method=config['model']['aggregation_method'],
+                )
                 
                 # Create trainer
                 trainer = OrbitalTrainer(

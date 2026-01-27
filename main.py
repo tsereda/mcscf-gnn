@@ -149,12 +149,6 @@ def main():
             'epochs',
             config['training']['num_epochs']
         )
-        # Read sweep params for aggregation method and physics constraints
-        config['model']['aggregation_method'] = getattr(
-            wandb.config,
-            'aggregation_method',
-            'attention'  # default
-        )
         config['training']['use_physics_constraints'] = getattr(wandb.config, 'use_physics_constraints', True)
         
         # RBF distance encoding parameters
@@ -465,7 +459,6 @@ def main():
                     include_orbital_type=config['model']['include_orbital_type'],
                     include_m_quantum=config['model']['include_m_quantum'],
                     use_element_baselines=config['model'].get('use_element_baselines', True),
-                    aggregation_method=config['model']['aggregation_method'],
                 )
                 
                 # Create trainer

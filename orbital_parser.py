@@ -12,13 +12,14 @@ import sys
 class OrbitalGAMESSParser:
     
     def __init__(self, distance_cutoff: float = 4.0, debug: bool = False, min_atoms: int = 2,
-                 include_orbital_type: bool = True, include_m_quantum: bool = True):
+                 include_orbital_type: bool = True, include_m_quantum: bool = True,
+                 global_target_type: str = 'mcscf_energy'):
         self.distance_cutoff = distance_cutoff
         self.debug = debug
         self.min_atoms = min_atoms
         self.include_orbital_type = include_orbital_type
         self.include_m_quantum = include_m_quantum
-        
+        self.global_target_type = global_target_type
         elements = ['H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 
                     'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca']
         self.atomic_numbers = {elem.upper(): i+1 for i, elem in enumerate(elements)}
@@ -29,7 +30,9 @@ class OrbitalGAMESSParser:
             content = f.read()
         
         data = {'coordinates': None, 'atoms': None, 'orbital_data': None,
-                'density_matrix': None, 'kei_bo_matrix': None, 'final_mcscf_energy': None, 'filename': filepath}
+                'density_matrix': None, 'kei_bo_matrix': None,
+                'final_mcscf_energy': None, 'total_kinetic_energy': None,
+                'filename': filepath}
         
         # Extract atomic coordinates and symbols
         coords, atoms = self._extract_coordinates(content)
@@ -47,12 +50,13 @@ class OrbitalGAMESSParser:
             ('density_matrix', self._extract_density_matrix, (content,), "density matrix"),
             ('kei_bo_matrix', self._extract_kei_bo_matrix_orbital, (content, atoms), "KEI-BO orbital data"),
             ('final_mcscf_energy', self._extract_mcscf_energy, (content,), "FINAL MCSCF ENERGY"),
+            ('total_kinetic_energy', self._extract_total_kinetic_energy, (content,), "TOTAL KINETIC ENERGY"),
             ('orbital_characters', self._extract_orbital_characters, (content,), "orbital characters")
         ]
         
         for key, func, args, desc in extractors:
             result = func(*args)
-            if result is None and key != 'orbital_characters':  # orbital_characters is optional
+            if result is None and key not in ['orbital_characters', 'total_kinetic_energy']:
                 raise ValueError(f"Could not extract {desc} from {filepath}")
             data[key] = result
         
@@ -61,24 +65,11 @@ class OrbitalGAMESSParser:
         
         return data
     
-    def _extract_mcscf_energy(self, content: str) -> Optional[float]:
-        """Extract the FINAL ENERGY (MCSCF or Standard SCF) from GAMESS output"""
-        # 1. Try explicit MCSCF Energy (for your multireference files)
-        match = re.search(r"FINAL MCSCF ENERGY IS\s+([-+]?\d+\.\d+)", content)
+    def _extract_total_kinetic_energy(self, content: str) -> Optional[float]:
+        """Extract the TOTAL KINETIC ENERGY from GAMESS output"""
+        match = re.search(r"TOTAL KINETIC ENERGY\s+=\s+([-+]?\d+\.\d+)", content)
         if match:
             return float(match.group(1))
-
-        # 2. Try Standard GAMESS Total Energy (for Hartree-Fock files)
-        # Matches "TOTAL ENERGY = -40.123..."
-        match = re.search(r"TOTAL ENERGY\s+=\s+([-+]?\d+\.\d+)", content)
-        if match:
-            return float(match.group(1))
-        
-        # 3. Fallback for other formats (like Gaussian "SCF Done")
-        match = re.search(r"(?:SCF Done:|E\\(RHF\\) =)\s+([-+]?\d+\.\d+)", content)
-        if match: 
-            return float(match.group(1))
-
         return None
     
     def _extract_coordinates(self, content: str) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
@@ -329,7 +320,8 @@ class OrbitalGAMESSParser:
         atoms = data['atoms']
         orbital_data = data['orbital_data']
         kei_bo_matrix = data['kei_bo_matrix']
-        final_energy = data['final_mcscf_energy']
+        final_mcscf_energy = data['final_mcscf_energy']
+        total_kinetic_energy = data['total_kinetic_energy']
         
         num_orbitals = len(orbital_data['orbital_features'])
         
@@ -343,8 +335,13 @@ class OrbitalGAMESSParser:
         # Hybridization targets: [s%, p%, d%, f%] for each orbital
         hybrid_targets = torch.tensor(orbital_data['orbital_hybridization'], dtype=torch.float)
         
-        # Global target: MCSCF energy
-        global_target = torch.tensor([final_energy], dtype=torch.float)
+        # Select global target
+        if self.global_target_type == 'kinetic_energy':
+            if total_kinetic_energy is None:
+                raise ValueError(f"TOTAL KINETIC ENERGY not found in file, but global_target_type='kinetic_energy'")
+            global_target = torch.tensor([total_kinetic_energy], dtype=torch.float)
+        else:
+            global_target = torch.tensor([final_mcscf_energy], dtype=torch.float)
         
         # Create orbital positions for distance calculations
         orbital_positions = []

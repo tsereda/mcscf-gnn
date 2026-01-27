@@ -1,6 +1,6 @@
 
 program: main.py
-method: bayes
+method: grid
 project: gamess-gnn-sweep
 
 metric:
@@ -8,6 +8,10 @@ metric:
   goal: minimize
 
 parameters:
+  global_target_type:
+    values:
+      - mcscf_energy
+      - kinetic_energy 
 
   use_physics_constraints:
     values: [false]

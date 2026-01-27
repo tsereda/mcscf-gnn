@@ -28,6 +28,35 @@ from visualization import (
 )
 
 
+import os
+import json
+from datetime import datetime
+import wandb
+import sys
+import numpy as np
+import torch
+
+from orbital_gnn import create_orbital_model, create_orbital_model_with_attention
+from orbital_trainer import OrbitalTrainer, process_orbital_files
+from orbital_parser import OrbitalGAMESSParser
+from torch_geometric.data import DataLoader
+from normalization import DataNormalizer
+from crossvalidation import (
+    get_all_files_per_folder,
+    create_file_to_folder_mapping,
+    prepare_single_fold_data,
+    prepare_element_based_fold_data,
+    prepare_random_split_data,
+    get_all_elements_in_dataset,
+    save_detailed_orbital_validation_report,
+    save_combined_orbital_results
+)
+from visualization import (
+    create_summary_plots, 
+    create_comprehensive_analysis,
+    ModelVisualizer
+)
+
 def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fold_num):
     """Compute global normalization statistics excluding validation fold."""
     
@@ -37,7 +66,8 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
         distance_cutoff=4.0, 
         debug=False,
         include_orbital_type=config['model'].get('include_orbital_type', True),
-        include_m_quantum=config['model'].get('include_m_quantum', True)
+        include_m_quantum=config['model'].get('include_m_quantum', True),
+        global_target_type=config['model'].get('global_target_type', 'mcscf_energy')
     )
     train_graphs = process_orbital_files(parser, files_to_use)
     
@@ -74,7 +104,8 @@ def main():
             'rbf_cutoff': 5.0,
             'include_hybridization': True,
             'include_m_quantum': True,
-            'use_attention': True
+            'use_attention': True,
+            'global_target_type': 'mcscf_energy'  # NEW: 'mcscf_energy' or 'kinetic_energy'
         },
         'training': {
             'learning_rate': 0.0001,
@@ -229,6 +260,13 @@ def main():
         print(f"Include Orbital Type: {config['model']['include_orbital_type']}")
         print(f"Include M Quantum: {config['model']['include_m_quantum']}")
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
+        # NEW: Global target type parameter
+        config['model']['global_target_type'] = getattr(
+            wandb.config,
+            'global_target_type',
+            'mcscf_energy'  # Default to MCSCF energy
+        )
+        print(f"Global Target Type: {config['model']['global_target_type']}")  # NEW
         print(f"Weights: Occupation={wandb.config.occupation_weight:.2f}, KEI-BO={wandb.config.kei_bo_weight:.2f}, Energy={wandb.config.energy_weight:.2f}")
         print(f"Loss Balancing Strategy: {strategy}")
         print(f"Include Hybridization: {config['model']['include_hybridization']}")
@@ -242,6 +280,7 @@ def main():
     print(f"  Model: {config['model']['hidden_dim']}D hidden, {config['model']['num_layers']} layers, {config['model']['dropout']} dropout")
     print(f"  Pooling: {config['model']['global_pooling_method']}")
     print(f"  Orbital Embedding: {config['model']['orbital_embedding_dim']}D")
+    print(f"  Global Target: {config['model']['global_target_type']}")  # NEW
     print(f"  Training: LR={config['training']['learning_rate']}, WD={config['training']['weight_decay']}, {config['training']['num_epochs']} epochs")
     
     if config['gradnorm']['enabled']:
@@ -379,7 +418,8 @@ def main():
                         random_seed=config['data']['random_seed'],
                         batch_size=config['training']['batch_size'],
                         include_orbital_type=config['model']['include_orbital_type'],
-                        include_m_quantum=config['model']['include_m_quantum']
+                        include_m_quantum=config['model']['include_m_quantum'],
+                        global_target_type=config['model']['global_target_type']  # NEW
                     )
                     # Get validation files for this fold
                     val_files = fold_info.get('validation_files', [])
@@ -397,7 +437,8 @@ def main():
                         all_files, file_to_folder, element_index, available_elements, 
                         config['training']['batch_size'],
                         include_orbital_type=config['model']['include_orbital_type'],
-                        include_m_quantum=config['model']['include_m_quantum']
+                        include_m_quantum=config['model']['include_m_quantum'],
+                        global_target_type=config['model']['global_target_type']  # NEW
                     )
                     # Get validation files for this fold
                     val_files = [f for f in all_files if file_to_folder.get(f) in fold_info.get('validation_actual_folders', [])]
@@ -412,7 +453,8 @@ def main():
                         folder_files, validation_folder, 
                         config['training']['batch_size'],
                         include_orbital_type=config['model']['include_orbital_type'],
-                        include_m_quantum=config['model']['include_m_quantum']
+                        include_m_quantum=config['model']['include_m_quantum'],
+                        global_target_type=config['model']['global_target_type']  # NEW
                     )
                     val_files = folder_files[validation_folder]
                 

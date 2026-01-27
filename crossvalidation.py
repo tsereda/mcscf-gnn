@@ -189,7 +189,8 @@ def prepare_random_split_data(all_files: List[str],
                               random_seed: int = 42,
                               batch_size: int = 16,
                               include_orbital_type: bool = True,
-                              include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
+                              include_m_quantum: bool = True,
+                              global_target_type: str = None) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare data with random train/validation split.
     
@@ -225,10 +226,11 @@ def prepare_random_split_data(all_files: List[str],
     
     # Process files with orbital parser
     parser = OrbitalGAMESSParser(
-        distance_cutoff=4.0, 
+        distance_cutoff=4.0,
         debug=False,
         include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum
+        include_m_quantum=include_m_quantum,
+        global_target_type=global_target_type
     )
     
     print(f"Processing training files...")

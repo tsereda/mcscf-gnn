@@ -71,7 +71,14 @@ class OrbitalGAMESSParser:
         if match:
             return float(match.group(1))
         return None
-    
+
+    def _extract_mcscf_energy(self, content: str) -> Optional[float]:
+        """Extract the FINAL MCSCF ENERGY from GAMESS output"""
+        match = re.search(r"FINAL MCSCF ENERGY IS\s+([-+]?\d+\.\d+)", content)
+        if match:
+            return float(match.group(1))
+        return None
+
     def _extract_coordinates(self, content: str) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Extract atomic coordinates and symbols (always in BOHR units)"""
         pattern = r'ATOM\s+ATOMIC\s+COORDINATES \(BOHR\)\s*\n\s*CHARGE\s+X\s+Y\s+Z\s*\n(.*?)(?=\n\s*INTERNUCLEAR|\n\s*\n|\Z)'

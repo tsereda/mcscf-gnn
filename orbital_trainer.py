@@ -352,16 +352,20 @@ class OrbitalTrainer:
 def process_orbital_files(parser: OrbitalGAMESSParser, filepaths: List[str]) -> List:
     """Process multiple GAMESS files using orbital parser."""
     graphs, failed = [], []
-    
+
     for filepath in filepaths:
         try:
             graphs.append(parser.parse_and_convert(filepath))
         except Exception as e:
             failed.append((filepath, str(e)))
-    
+
     print(f"Processed {len(graphs)}/{len(filepaths)} orbital graphs")
     if failed:
         print(f"Failed ({len(failed)}): {', '.join([os.path.basename(f[0]) for f in failed[:3]])}"
               + (f" + {len(failed) - 3} more" if len(failed) > 3 else ""))
-    
+        # Print first error for debugging
+        if len(failed) > 0:
+            first_file, first_error = failed[0]
+            print(f"First error ({os.path.basename(first_file)}): {first_error}")
+
     return graphs

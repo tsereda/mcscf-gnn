@@ -103,6 +103,7 @@ def main():
             'num_rbf': 50,
             'rbf_cutoff': 5.0,
             'include_hybridization': True,
+            'include_orbital_type': True,
             'include_m_quantum': True,
             'use_attention': True,
             'global_target_type': 'mcscf_energy'  # NEW: 'mcscf_energy' or 'kinetic_energy'
@@ -133,6 +134,7 @@ def main():
         'data': {
             'base_path': 'data',
             'validation_mode': 'per_element',
+            'validation_modes_to_run': ['random_split'],  # Options: 'random_split', 'per_element', 'all_in_one'
             'validation_subset': None,
             'val_split_ratio': 0.2,
             'random_seed': 42

@@ -94,6 +94,8 @@ ln -s /path/to/main/repo/data /path/to/worktree/data
 
 Without this symlink, all training will fail because the GAMESS .log files won't be accessible. The `data/` directory contains ~814 GAMESS output files organized into 59 folders (molecules, diatomics, dimers, etc.).
 
+**Note on macOS symlinks**: On macOS, `find` may not follow symlinks properly from outside the directory. Use `cd data && find .` or rely on Python's `glob` which handles symlinks correctly.
+
 ## Recent Changes (from git log)
 - Added global target type parameter for energy extraction
 - Refactored code structure for improved readability

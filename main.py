@@ -540,6 +540,11 @@ def main():
                     title_suffix=f" - Fold {fold_num + 1} (Val: {fold_info['validation_folder']})"
                 )
                 
+                # Log training curves to WandB
+                if is_sweep and config['wandb']['enabled']:
+                    if os.path.exists(fold_curves_path):
+                        wandb.log({f"{validation_mode}/fold_{fold_num + 1}_training_curves": wandb.Image(fold_curves_path)})
+                
                 # Generate validation report
                 report_path = save_detailed_orbital_validation_report(
                     trainer.model, val_loader, fold_info, trainer.device, run_dir, fold_num + 1, normalizer, validation_mode
@@ -612,6 +617,13 @@ def main():
             
             create_summary_plots(all_results, run_dir, summary_folder_names)
             save_combined_orbital_results(all_results, all_fold_info, config, run_dir)
+            
+            # Log cross-validation summary plot to WandB
+            if is_sweep and config['wandb']['enabled']:
+                summary_plot_path = os.path.join(run_dir, 'cross_validation_summary.png')
+                if os.path.exists(summary_plot_path):
+                    wandb.log({f"{validation_mode}/cross_validation_summary": wandb.Image(summary_plot_path)})
+                    print(f"Logged cross-validation summary to WandB: {validation_mode}/cross_validation_summary")
             
             # Log combined results JSON to WandB with validation mode in filename
             if is_sweep and config['wandb']['enabled']:

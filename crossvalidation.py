@@ -272,7 +272,8 @@ def prepare_element_based_fold_data(all_files: List[str],
                                   available_elements: List[str],
                                   batch_size: int = 16,
                                   include_orbital_type: bool = True,
-                                  include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
+                                  include_m_quantum: bool = True,
+                                  global_target_type: str = None) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare orbital data for element-based cross-validation.
     Each fold validates on molecules containing a specific element.
@@ -283,6 +284,7 @@ def prepare_element_based_fold_data(all_files: List[str],
         fold_num: Fold number (0 to len(available_elements)-1)
         available_elements: List of all elements found in dataset
         batch_size: Batch size for DataLoaders
+        global_target_type: Target type for energy ('mcscf_energy' or 'kinetic_energy')
         
     Returns:
         (train_loader, val_loader, fold_info)
@@ -309,7 +311,8 @@ def prepare_element_based_fold_data(all_files: List[str],
         distance_cutoff=4.0, 
         debug=False,
         include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum
+        include_m_quantum=include_m_quantum,
+        global_target_type=global_target_type
     )
     
     print(f"Processing training files...")
@@ -350,7 +353,8 @@ def prepare_single_fold_data(folder_files: Dict[str, List[str]],
                              validation_folder: str,
                              batch_size: int = 16,
                              include_orbital_type: bool = True,
-                             include_m_quantum: bool = True) -> Tuple[DataLoader, DataLoader, Dict]:
+                             include_m_quantum: bool = True,
+                             global_target_type: str = None) -> Tuple[DataLoader, DataLoader, Dict]:
     """
     Prepare orbital data for a single fold with specified validation folder.
     
@@ -358,6 +362,7 @@ def prepare_single_fold_data(folder_files: Dict[str, List[str]],
         folder_files: Dictionary mapping folder_name -> list_of_files
         validation_folder: Name of folder to use for validation
         batch_size: Batch size for DataLoaders
+        global_target_type: Target type for energy ('mcscf_energy' or 'kinetic_energy')
     
     Returns:
         (train_loader, val_loader, fold_info)
@@ -380,7 +385,8 @@ def prepare_single_fold_data(folder_files: Dict[str, List[str]],
         distance_cutoff=4.0, 
         debug=False,
         include_orbital_type=include_orbital_type,
-        include_m_quantum=include_m_quantum
+        include_m_quantum=include_m_quantum,
+        global_target_type=global_target_type
     )
     
     print(f"Processing training files...")

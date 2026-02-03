@@ -438,6 +438,7 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
     """Analyze GAMESS files and print orbital-level data"""
     parser = OrbitalGAMESSParser(debug=True)
     successful, failed_by_type = [], {}
+    all_kei_bos = []  # NEW: Collect all KEI-BO values
     
     print(f"Analyzing {len(filepaths)} GAMESS files for orbital data...\n")
     
@@ -452,6 +453,14 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
             orbital_data = data['orbital_data']
             kei_bo_matrix = data['kei_bo_matrix']
             final_energy = data['final_mcscf_energy']
+            
+            # NEW: Collect all non-zero KEI-BO values
+            for i_orb in range(len(orbital_data['orbital_features'])):
+                for j_orb in range(i_orb+1, len(orbital_data['orbital_features'])):
+                    kei_bo_val = kei_bo_matrix[i_orb, j_orb]
+                    if abs(kei_bo_val) > 1e-8:
+                        all_kei_bos.append(kei_bo_val)
+            
             print(f"Atoms ({len(atoms)}):")
             for j, (atom, coord) in enumerate(zip(atoms, coords)):
                 print(f"  {j+1:2d} {atom:2s}: [{coord[0]:7.3f}, {coord[1]:7.3f}, {coord[2]:7.3f}] Å")
@@ -495,7 +504,24 @@ def analyze_orbital_files(filepaths: List[str]) -> None:
             print(f"  {error_type}: {len(file_list)} files")
             for fname, emsg in file_list:
                 print(f"    - {fname}: {emsg}")
-
+    
+    # NEW: KEI-BO statistics
+    if all_kei_bos:
+        all_kei_bos = np.array(all_kei_bos)
+        print(f"\n=== KEI-BO STATISTICS ===")
+        print(f"Total KEI-BO values collected: {len(all_kei_bos)}")
+        print(f"Minimum KEI-BO: {np.min(all_kei_bos):.6f} a.u.")
+        print(f"Maximum KEI-BO: {np.max(all_kei_bos):.6f} a.u.")
+        print(f"Mean KEI-BO: {np.mean(all_kei_bos):.6f} a.u.")
+        print(f"Median KEI-BO: {np.median(all_kei_bos):.6f} a.u.")
+        print(f"Std Dev KEI-BO: {np.std(all_kei_bos):.6f} a.u.")
+        print(f"\nPercentiles:")
+        print(f"  1st percentile:  {np.percentile(all_kei_bos, 1):.6f} a.u.")
+        print(f"  5th percentile:  {np.percentile(all_kei_bos, 5):.6f} a.u.")
+        print(f"  25th percentile: {np.percentile(all_kei_bos, 25):.6f} a.u.")
+        print(f"  75th percentile: {np.percentile(all_kei_bos, 75):.6f} a.u.")
+        print(f"  95th percentile: {np.percentile(all_kei_bos, 95):.6f} a.u.")
+        print(f"  99th percentile: {np.percentile(all_kei_bos, 99):.6f} a.u.")
 
 def main():
     """Main function for orbital parser testing"""

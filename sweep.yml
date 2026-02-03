@@ -20,7 +20,7 @@ parameters:
     value: 'all'
   
   validation_subset:
-    value: ['H', 'C', 'F', 'b2', 'h20', 'lic']  # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
+    value: null # null = all elements/molecules, or specify list like ['H', 'C'] or ['b2', 'h2o']
   
   val_split_ratio:
     value: 0.2  # Only used for random_split method
@@ -72,7 +72,7 @@ parameters:
     values: [5]
 
   epochs:
-    values: [30]
+    values: [200]
 
   # RBF Distance Encoding
   use_rbf_distance:

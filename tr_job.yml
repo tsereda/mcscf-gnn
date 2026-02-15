@@ -26,12 +26,12 @@ spec:
             - name: WANDB_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: wandb-credentials
-                  key: api-key
+                  name: outlook-wandb-s
+                  key: WANDB_API_KEY
             - name: WANDB_PROJECT
               value: "fast-cwmd"
             - name: WANDB_ENTITY
-              value: "timgsereda"
+              value: "timothy-sereda-usd"
             - name: WANDB_MODE
               value: "online"
 
@@ -42,13 +42,15 @@ spec:
 
               pip install wandb torch_geometric
 
-              git clone https://github.com/tsereda/mcscf-gnn.git
+              git clone -b claude/add-training-checkpoints-OB8S4 https://github.com/tsereda/mcscf-gnn.git
               cd mcscf-gnn
 
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              wandb agent timgsereda/gamess-gnn-sweep/dnffyu6j
+              #main.py --from-sweep
+
+              wandb agent timothy-sereda-usd/gamess-gnn-sweep/b8wmr8rk
         
           volumeMounts:
             - name: workspace

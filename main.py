@@ -278,7 +278,6 @@ def main():
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
     elif is_production:
         # Production mode: fetch best config from a W&B sweep and run rigorous training
-        import wandb
         api = wandb.Api()
 
         # Resolve entity/project from the sweep ID or use defaults

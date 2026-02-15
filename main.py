@@ -88,8 +88,10 @@ def compute_fold_global_normalizer(all_files, exclude_files, config, run_dir, fo
 def main():
     """Main training script with n-fold cross-validation, normalization, GradNorm, and WandB support."""
     
-    # Check if running as WandB sweep
+    # Check if running as WandB sweep or production mode
     is_sweep = len(sys.argv) > 1 and sys.argv[1] == '--sweep'
+    is_production = len(sys.argv) > 2 and sys.argv[1] == '--from-sweep'
+    sweep_id = sys.argv[2] if is_production else None
     
     # Default configuration
     default_config = {
@@ -274,10 +276,90 @@ def main():
         print(f"Include Hybridization: {config['model']['include_hybridization']}")
         print(f"Include M Quantum: {config['model']['include_m_quantum']}")
         print(f"Use Element Baselines: {config['model']['use_element_baselines']}")
+    elif is_production:
+        # Production mode: fetch best config from a W&B sweep and run rigorous training
+        import wandb
+        api = wandb.Api()
+
+        # Resolve entity/project from the sweep ID or use defaults
+        # sweep_id can be "entity/project/sweep_id" or just "sweep_id"
+        if '/' in sweep_id:
+            sweep_path = sweep_id
+        else:
+            sweep_path = f"gamess-gnn-sweep/{sweep_id}"
+
+        print(f"\n{'='*70}")
+        print(f"PRODUCTION MODE — Loading best config from sweep: {sweep_path}")
+        print(f"{'='*70}")
+
+        sweep_obj = api.sweep(sweep_path)
+        best_run = sweep_obj.best_run(order="summary_metrics.overall/avg_val_kei_bo_mse")
+        print(f"Best run: {best_run.id} (val KEI-BO MSE = {best_run.summary.get('overall/avg_val_kei_bo_mse', 'N/A')})")
+
+        # Start from default config, then override with best run's hyperparameters
+        config = default_config.copy()
+        rc = best_run.config  # flat dict from the sweep run
+
+        # Model params
+        config['model']['hidden_dim'] = rc.get('hidden_dim', config['model']['hidden_dim'])
+        config['model']['num_layers'] = rc.get('num_layers', config['model']['num_layers'])
+        config['model']['orbital_embedding_dim'] = rc.get('orbital_embedding_dim', config['model']['orbital_embedding_dim'])
+        config['model']['global_pooling_method'] = rc.get('pooling_method', config['model']['global_pooling_method'])
+        config['model']['use_rbf_distance'] = rc.get('use_rbf_distance', config['model']['use_rbf_distance'])
+        config['model']['num_rbf'] = rc.get('num_rbf', config['model']['num_rbf'])
+        config['model']['rbf_cutoff'] = rc.get('rbf_cutoff', config['model']['rbf_cutoff'])
+        config['model']['include_hybridization'] = rc.get('include_hybridization', True)
+        config['model']['include_orbital_type'] = rc.get('include_orbital_type', True)
+        config['model']['include_m_quantum'] = rc.get('include_m_quantum', True)
+        config['model']['use_element_baselines'] = rc.get('use_element_baselines', False)
+        config['model']['global_target_type'] = rc.get('global_target_type', 'mcscf_energy')
+
+        # Training params
+        config['training']['occupation_weight'] = rc.get('occupation_weight', config['training']['occupation_weight'])
+        config['training']['kei_bo_weight'] = rc.get('kei_bo_weight', config['training']['kei_bo_weight'])
+        config['training']['energy_weight'] = rc.get('energy_weight', config['training']['energy_weight'])
+        config['training']['num_epochs'] = rc.get('epochs', config['training']['num_epochs'])
+        config['training']['use_physics_constraints'] = rc.get('use_physics_constraints', False)
+
+        # Loss balancing
+        strategy = rc.get('loss_balancing_strategy', 'uncertainty_weighting')
+        config['gradnorm']['enabled'] = (strategy == 'gradnorm')
+        config['training']['use_uncertainty_weighting'] = (strategy == 'uncertainty_weighting')
+        config['use_first_epoch_weighting'] = (strategy == 'first_epoch')
+
+        # Normalization
+        config['normalization']['enabled'] = rc.get('normalization_enabled', True)
+        config['normalization']['global_norm'] = rc.get('normalization_global', False)
+
+        # Production overrides: per-element CV, more epochs
+        config['data']['validation_modes_to_run'] = ['per_element']
+        config['data']['val_split_ratio'] = rc.get('val_split_ratio', 0.2)
+        config['data']['random_seed'] = rc.get('random_seed', 42)
+        config['training']['num_epochs'] = 500  # longer training for production
+
+        # Allow --epochs CLI override for production
+        for i, arg in enumerate(sys.argv):
+            if arg == '--epochs' and i + 1 < len(sys.argv):
+                config['training']['num_epochs'] = int(sys.argv[i + 1])
+                break
+
+        # Initialize W&B in a separate production project
+        run = wandb.init(
+            project='gamess-gnn-production',
+            config=config,
+            tags=['production', f'sweep-{sweep_id}'],
+        )
+        config['wandb']['enabled'] = True
+        config['wandb']['project'] = 'gamess-gnn-production'
+
+        print(f"Production config loaded from sweep best run {best_run.id}")
+        print(f"  Epochs: {config['training']['num_epochs']}")
+        print(f"  Validation: per_element cross-validation")
+
     else:
         config = default_config
         print("Starting Orbital N-Fold Cross-Validation Training")
-    
+
     print(f"\nConfiguration:")
     print(f"  Model: {config['model']['hidden_dim']}D hidden, {config['model']['num_layers']} layers, {config['model']['dropout']} dropout")
     print(f"  Pooling: {config['model']['global_pooling_method']}")
@@ -389,7 +471,9 @@ def main():
             pooling_suffix = f"_{config['model']['global_pooling_method']}"
             mode_suffix = f"_{validation_mode}"
             
-            if is_sweep:
+            if is_production:
+                run_dir = f"runs/orbital_production_{sweep_id}_{timestamp}{norm_suffix}{gradnorm_suffix}{pooling_suffix}{mode_suffix}"
+            elif is_sweep:
                 run_dir = f"runs/orbital_sweep_{wandb.run.id}_{timestamp}{norm_suffix}{gradnorm_suffix}{pooling_suffix}{mode_suffix}"
             else:
                 run_dir = f"runs/orbital_cross_validation_{timestamp}{norm_suffix}{gradnorm_suffix}{pooling_suffix}{mode_suffix}"
@@ -521,7 +605,10 @@ def main():
                     gradnorm_alpha=config['gradnorm']['alpha'],
                     gradnorm_lr=config['gradnorm']['learning_rate'],
                     use_first_epoch_weighting=config.get('use_first_epoch_weighting', False),
-                    wandb_enabled=is_sweep,
+                    wandb_enabled=is_sweep or is_production,
+                    checkpoint_dir=run_dir if (is_production or not is_sweep) else None,
+                    fold_index=fold_num + 1,
+                    config=config,
                     use_physics_constraints=config['training'].get('use_physics_constraints', True)
                 )
                 
@@ -541,7 +628,7 @@ def main():
                 )
                 
                 # Log training curves to WandB
-                if is_sweep and config['wandb']['enabled']:
+                if (is_sweep or is_production) and config['wandb']['enabled']:
                     if os.path.exists(fold_curves_path):
                         wandb.log({f"{validation_mode}/fold_{fold_num + 1}_training_curves": wandb.Image(fold_curves_path)})
                 
@@ -551,7 +638,7 @@ def main():
                 )
                 
                 # Log validation report to WandB as an artifact
-                if is_sweep and config['wandb']['enabled']:
+                if (is_sweep or is_production) and config['wandb']['enabled']:
                     if os.path.exists(report_path):
                         wandb.save(report_path, base_path=run_dir)
                 
@@ -587,7 +674,7 @@ def main():
             }
             
             # Log to WandB for this validation mode
-            if is_sweep and config['wandb']['enabled']:
+            if (is_sweep or is_production) and config['wandb']['enabled']:
                 wandb.log({
                     f'{validation_mode}/avg_val_mse': avg_val_mse,
                     f'{validation_mode}/avg_val_occupation_mse': avg_val_occupation_mse,
@@ -619,14 +706,14 @@ def main():
             save_combined_orbital_results(all_results, all_fold_info, config, run_dir)
             
             # Log cross-validation summary plot to WandB
-            if is_sweep and config['wandb']['enabled']:
+            if (is_sweep or is_production) and config['wandb']['enabled']:
                 summary_plot_path = os.path.join(run_dir, 'cross_validation_summary.png')
                 if os.path.exists(summary_plot_path):
                     wandb.log({f"{validation_mode}/cross_validation_summary": wandb.Image(summary_plot_path)})
                     print(f"Logged cross-validation summary to WandB: {validation_mode}/cross_validation_summary")
-            
+
             # Log combined results JSON to WandB with validation mode in filename
-            if is_sweep and config['wandb']['enabled']:
+            if (is_sweep or is_production) and config['wandb']['enabled']:
                 # Save with validation mode prefix
                 src_path = os.path.join(run_dir, 'orbital_results.json')
                 dest_path = os.path.join(run_dir, f'{validation_mode}_orbital_results.json')
@@ -634,10 +721,10 @@ def main():
                     import shutil
                     shutil.copy(src_path, dest_path)
                     wandb.save(dest_path, base_path=run_dir)
-        
+
         # After all validation modes complete:
         # Compute overall average across all validation modes
-        if is_sweep and config['wandb']['enabled'] and len(all_mode_results) > 0:
+        if (is_sweep or is_production) and config['wandb']['enabled'] and len(all_mode_results) > 0:
             overall_avg_mse = np.mean([res['avg_val_mse'] for res in all_mode_results.values()])
             overall_avg_occupation_mse = np.mean([res['avg_val_occupation_mse'] for res in all_mode_results.values()])
             overall_avg_kei_bo_mse = np.mean([res['avg_val_kei_bo_mse'] for res in all_mode_results.values()])
@@ -662,14 +749,14 @@ def main():
         print("ALL VALIDATION MODES COMPLETE")
         print(f"{'='*70}")
         
-        if is_sweep:
+        if is_sweep or is_production:
             wandb.finish()
-        
+
     except Exception as e:
         print(f"Orbital cross-validation failed: {e}")
         import traceback
         traceback.print_exc()
-        if is_sweep:
+        if is_sweep or is_production:
             wandb.finish(exit_code=1)
 
 

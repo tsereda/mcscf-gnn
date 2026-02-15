@@ -19,7 +19,7 @@ class OrbitalTrainer:
                  learning_rate: float,
                  weight_decay: float,
                  occupation_weight: float,
-                 kei_bo_weight: float, 
+                 kei_bo_weight: float,
                  energy_weight: float,
                  hybrid_weight: float = 1.0,
                  normalizer: Optional[DataNormalizer] = None,
@@ -30,6 +30,9 @@ class OrbitalTrainer:
                  use_first_epoch_weighting: bool = False,
                  wandb_enabled: bool = False,
                  device: str = None,
+                 checkpoint_dir: str = None,
+                 fold_index: int = None,
+                 config: dict = None,
                  use_physics_constraints: bool = True):
         
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -39,6 +42,13 @@ class OrbitalTrainer:
         self.use_first_epoch_weighting = use_first_epoch_weighting
         self.first_epoch_complete = False
         self.include_hybridization = model.include_hybridization
+
+        # Checkpoint settings
+        self.checkpoint_dir = checkpoint_dir
+        self.fold_index = fold_index
+        self.config = config
+        self.best_val_kei_bo_mse = float('inf')
+        self.best_checkpoint_path = None
         
         # Choose loss function based on settings
         self.use_gradnorm = use_gradnorm
@@ -225,8 +235,62 @@ class OrbitalTrainer:
     
     def validate(self, dataloader: DataLoader) -> Dict:
         return self._run_epoch(dataloader, False)
-    
-    def train(self, train_loader: DataLoader, val_loader: DataLoader, 
+
+    def _save_checkpoint(self, epoch: int):
+        """Save best model checkpoint locally and optionally upload to W&B Artifacts."""
+        if self.checkpoint_dir is None:
+            return
+
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        fold_label = f"{self.fold_index:02d}" if self.fold_index is not None else "00"
+        filename = f"best_model_fold{fold_label}_checkpoint.pt"
+        filepath = os.path.join(self.checkpoint_dir, filename)
+
+        # Build normalizer stats snapshot (self-contained, no separate pkl needed)
+        normalizer_stats = None
+        if self.normalizer and self.normalizer.is_fitted():
+            normalizer_stats = {
+                'method': self.normalizer.method,
+                'stats': self.normalizer.stats,
+            }
+
+        checkpoint = {
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss_fn_state_dict': self.loss_fn.state_dict(),
+            'epoch': epoch,
+            'best_val_kei_bo_mse': self.best_val_kei_bo_mse,
+            'config': self.config,
+            'fold_index': self.fold_index,
+            'normalizer_stats': normalizer_stats,
+        }
+
+        torch.save(checkpoint, filepath)
+        self.best_checkpoint_path = filepath
+        print(f"  [Checkpoint] Saved best model (fold {fold_label}, epoch {epoch}) → {filepath}")
+
+        # If W&B is active, upload as artifact then delete local file
+        if self.wandb_enabled:
+            import wandb
+            artifact_name = f"best-model-fold{fold_label}"
+            artifact = wandb.Artifact(
+                artifact_name,
+                type="model",
+                metadata={
+                    'epoch': epoch,
+                    'best_val_kei_bo_mse': self.best_val_kei_bo_mse,
+                    'fold_index': self.fold_index,
+                },
+            )
+            artifact.add_file(filepath)
+            wandb.log_artifact(artifact)
+            print(f"  [Checkpoint] Uploaded artifact '{artifact_name}' to W&B")
+            # Remove local file so PVC never accumulates during sweeps
+            os.remove(filepath)
+            self.best_checkpoint_path = None
+            print(f"  [Checkpoint] Removed local file (stored in W&B)")
+
+    def train(self, train_loader: DataLoader, val_loader: DataLoader,
             num_epochs: int, print_frequency: int) -> Dict:
         """Full training loop."""
         print(f"Training {num_epochs} epochs | Train: {len(train_loader.dataset)} | Val: {len(val_loader.dataset)}")
@@ -262,7 +326,13 @@ class OrbitalTrainer:
             for task in self.task_types:
                 self.train_metrics[task].append(train_results[f'{task}_metrics'])
                 self.val_metrics[task].append(val_results[f'{task}_metrics'])
-            
+
+            # Check if this is the best model so far (by val KEI-BO MSE)
+            val_kei_bo_mse = val_results['kei_bo_metrics']['mse']
+            if val_kei_bo_mse < self.best_val_kei_bo_mse:
+                self.best_val_kei_bo_mse = val_kei_bo_mse
+                self._save_checkpoint(epoch + 1)
+
             # Log to WandB if enabled
             if self.wandb_enabled:
                 import wandb

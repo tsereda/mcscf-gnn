@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: mcscf-gnn-8
+  name: mcscf-gnn-7
 spec:
   backoffLimit: 0
   template:
@@ -42,15 +42,15 @@ spec:
 
               pip install wandb torch_geometric
 
-              git clone -b claude/add-training-checkpoints-OB8S4 https://github.com/tsereda/mcscf-gnn.git
+              git clone https://github.com/tsereda/mcscf-gnn.git
               cd mcscf-gnn
 
               unzip /data/dec20.zip
               sudo cp -r for-tim/ data/
 
-              #main.py --from-sweep
+              python main.py --from-sweep b8wmr8rk
 
-              wandb agent timothy-sereda-usd/gamess-gnn-sweep/b8wmr8rk
+              #wandb agent timothy-sereda-usd/gamess-gnn-sweep/b8wmr8rk
         
           volumeMounts:
             - name: workspace
@@ -76,7 +76,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: mcscfgnn-3
+            claimName: mcscfgnn-2
         - name: shm
           emptyDir:
             medium: Memory
